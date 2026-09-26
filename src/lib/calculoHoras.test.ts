@@ -7,6 +7,7 @@ import {
 import { gerarTextoDespacho } from './formatadorDespacho'
 import { executarTestesImportacao } from './importacaoPlanilha.test'
 import { executarTestesAuth } from './authValidations.test'
+import { sanitizarNomeColunaCategoria, gerarLinhasDadosCsv } from './exportacaoTurma'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '../types'
 
 /**
@@ -206,6 +207,92 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
   // Executar a suíte de validações de autenticação e e-mail
   const testesAuth = executarTestesAuth()
   resultados.push(...testesAuth.resultados)
+
+  // CT-07: Exportação de dados brutos CSV (flat)
+  const sanitizado1 = sanitizarNomeColunaCategoria('Eventos científicos com apresentação')
+  const sanitizado2 = sanitizarNomeColunaCategoria('Cursos Livres Presenciais ou Online (10h)')
+  if (
+    sanitizado1 === 'horas_eventos_cientificos_com_apresentacao' &&
+    sanitizado2 === 'horas_cursos_livres_presenciais_ou_online_10h'
+  ) {
+    resultados.push('CT-07.1: Sanitização de colunas de categorias NDE passou.')
+  } else {
+    throw new Error(`CT-07.1 falhou: ${sanitizado1} | ${sanitizado2}`)
+  }
+
+  const exportacaoCsvTeste = gerarLinhasDadosCsv({
+    alunos: [mockAluno3Semestre],
+    lancamentos: lancamentos,
+    categorias: [mockCatEventos, mockCatCursos],
+    config: mockConfig,
+  })
+
+  // Verificar BOM
+  if (!exportacaoCsvTeste.conteudoCsv.startsWith('\uFEFF')) {
+    throw new Error('CT-07.2 falhou: CSV gerado não inicia com BOM UTF-8 (\\uFEFF)')
+  }
+
+  // Verificar cabeçalhos obrigatórios
+  const cabecalhosEsperados = [
+    'matricula',
+    'nome',
+    'email',
+    'turno',
+    'semestre_atual',
+    'periodo_entrada',
+    'horas_semestre_atual',
+    'total_geral_horas',
+    'horas_restantes_para_200h',
+    'percentual_integralizacao_curso',
+    'balanco_semestral',
+  ]
+  for (const col of cabecalhosEsperados) {
+    if (!exportacaoCsvTeste.cabecalhos.includes(col)) {
+      throw new Error(`CT-07.3 falhou: Coluna obrigatória ausente no CSV: ${col}`)
+    }
+  }
+
+  // Verificar se as categorias NDE ativas viraram colunas sanitizadas
+  const temColEventos = exportacaoCsvTeste.cabecalhos.some((c) =>
+    c.includes('horas_eventos_cientificos'),
+  )
+  const temColCursos = exportacaoCsvTeste.cabecalhos.some((c) => c.includes('horas_cursos_livres'))
+  if (!temColEventos || !temColCursos) {
+    throw new Error('CT-07.4 falhou: Colunas de categorias NDE não encontradas nos cabeçalhos')
+  }
+
+  // Verificar linha do aluno:
+  // Horas semestre = 20 (minimo semestral = 20 -> CUMPRIU)
+  // Total geral = 20 (meta 200 -> faltam 180h, 10%)
+  const linhaAluno = exportacaoCsvTeste.linhas[0]
+  if (!linhaAluno) {
+    throw new Error('CT-07.5 falhou: Nenhuma linha gerada para o aluno')
+  }
+
+  const idxMatricula = exportacaoCsvTeste.cabecalhos.indexOf('matricula')
+  const idxBalanco = exportacaoCsvTeste.cabecalhos.indexOf('balanco_semestral')
+  const idxHorasSem = exportacaoCsvTeste.cabecalhos.indexOf('horas_semestre_atual')
+  const idxTotalGeral = exportacaoCsvTeste.cabecalhos.indexOf('total_geral_horas')
+  const idxRestante = exportacaoCsvTeste.cabecalhos.indexOf('horas_restantes_para_200h')
+  const idxPercentual = exportacaoCsvTeste.cabecalhos.indexOf('percentual_integralizacao_curso')
+
+  if (
+    linhaAluno[idxMatricula] === 'PSI001' &&
+    linhaAluno[idxBalanco] === 'CUMPRIU' &&
+    linhaAluno[idxHorasSem] === 20 &&
+    linhaAluno[idxTotalGeral] === 20 &&
+    linhaAluno[idxRestante] === 180 &&
+    linhaAluno[idxPercentual] === 10
+  ) {
+    resultados.push('CT-07.2: Geração de linhas de dados brutos CSV com métricas e BOM passou.')
+  } else {
+    throw new Error(`CT-07.5 falhou: Linha de dados inesperada: ${JSON.stringify(linhaAluno)}`)
+  }
+
+  if (exportacaoCsvTeste.nomeArquivo !== 'dados-alunos-2026.2.csv') {
+    throw new Error(`CT-07.6 falhou: Nome de arquivo inesperado: ${exportacaoCsvTeste.nomeArquivo}`)
+  }
+  resultados.push('CT-07.3: Nomenclatura automática de arquivo dados-alunos-2026.2.csv passou.')
 
   return { todosPassaram: true, resultados }
 }

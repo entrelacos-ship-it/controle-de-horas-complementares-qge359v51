@@ -33,6 +33,7 @@ import {
   exportarTurmaExcel,
   exportarTurmaCsv,
   exportarTurmaPdf,
+  exportarTurmaDadosCsv,
   type TurmaItemExportacao,
 } from '@/lib/exportacaoTurma'
 import {
@@ -65,6 +66,7 @@ export default function Turmas() {
   const [promovendo, setPromovendo] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
   const [exportandoCsv, setExportandoCsv] = useState(false)
+  const [exportandoDadosCsv, setExportandoDadosCsv] = useState(false)
   const [exportandoPdf, setExportandoPdf] = useState(false)
 
   const carregarDados = async () => {
@@ -218,18 +220,43 @@ export default function Turmas() {
         filtroStatus,
       })
       toast({
-        title: 'Arquivo CSV gerado com sucesso!',
-        description: `Exportados ${dadosPreparados.length} estudantes filtrados para CSV (.csv).`,
+        title: 'Relatório CSV gerado com sucesso!',
+        description: `Exportados ${dadosPreparados.length} estudantes filtrados para relatório CSV (.csv).`,
       })
     } catch (err) {
       console.error(err)
       toast({
         title: 'Erro ao exportar CSV',
-        description: 'Ocorreu uma falha ao gerar o arquivo CSV.',
+        description: 'Ocorreu uma falha ao gerar o relatório CSV.',
         variant: 'destructive',
       })
     } finally {
       setExportandoCsv(false)
+    }
+  }
+
+  const handleExportarDadosCsv = () => {
+    try {
+      setExportandoDadosCsv(true)
+      exportarTurmaDadosCsv({
+        alunos: alunosFiltrados,
+        lancamentos,
+        categorias,
+        config,
+      })
+      toast({
+        title: 'CSV de Dados brutos exportado com sucesso!',
+        description: `${alunosFiltrados.length} estudantes exportados em formato plano para backup e manipulação externa.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao exportar dados CSV',
+        description: 'Ocorreu uma falha ao gerar o arquivo CSV de dados.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportandoDadosCsv(false)
     }
   }
 
@@ -301,89 +328,115 @@ export default function Turmas() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Botão Exportar Excel */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportarExcel}
-            disabled={exportandoExcel || loading || alunosFiltrados.length === 0}
-            className="text-xs text-slate-700 hover:text-green-700 hover:border-green-300 hover:bg-green-50/50 shadow-xs"
-            title="Exportar planilha Excel formatada com agrupamentos e filtros atuais"
-          >
-            {exportandoExcel ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-green-600" />
-            ) : (
-              <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-green-600" />
-            )}
-            Excel (.xlsx)
-          </Button>
+        <div className="flex flex-col sm:items-end gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Botão Exportar Dados (CSV) - DADOS BRUTOS PARA BACKUP / MANIPULAÇÃO */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportarDadosCsv}
+              disabled={exportandoDadosCsv || loading || alunosFiltrados.length === 0}
+              className="text-xs font-semibold text-[#0f2b48] border-[#0f2b48]/30 hover:border-[#1d4ed8] hover:bg-blue-50/60 shadow-xs"
+              title="Exportar dados brutos em CSV (1 linha por aluno, sem cabeçalhos visuais, com colunas por categoria NDE) para backup e manipulação no Excel/Google Sheets"
+            >
+              {exportandoDadosCsv ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-[#1d4ed8]" />
+              ) : (
+                <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-[#1d4ed8]" />
+              )}
+              Exportar Dados (CSV)
+            </Button>
 
-          {/* Botão Exportar CSV */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportarCsv}
-            disabled={exportandoCsv || loading || alunosFiltrados.length === 0}
-            className="text-xs text-slate-700 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50/50 shadow-xs"
-            title="Exportar dados tabulados em CSV (compatível com Google Sheets e Excel)"
-          >
-            {exportandoCsv ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-emerald-600" />
-            ) : (
-              <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
-            )}
-            CSV (.csv)
-          </Button>
+            {/* Botão Exportar Excel */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportarExcel}
+              disabled={exportandoExcel || loading || alunosFiltrados.length === 0}
+              className="text-xs text-slate-700 hover:text-green-700 hover:border-green-300 hover:bg-green-50/50 shadow-xs"
+              title="Exportar planilha Excel formatada com agrupamentos institucionais e filtros atuais"
+            >
+              {exportandoExcel ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-green-600" />
+              ) : (
+                <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-green-600" />
+              )}
+              Excel (.xlsx)
+            </Button>
 
-          {/* Botão Exportar PDF */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportarPdf}
-            disabled={exportandoPdf || loading || alunosFiltrados.length === 0}
-            className="text-xs text-slate-700 hover:text-red-700 hover:border-red-300 hover:bg-red-50/50 shadow-xs"
-            title="Exportar relatório institucional oficial em PDF Paisagem"
-          >
-            {exportandoPdf ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-red-600" />
-            ) : (
-              <FileText className="mr-1.5 h-3.5 w-3.5 text-red-600" />
-            )}
-            PDF Oficial
-          </Button>
+            {/* Botão Exportar Relatório CSV */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportarCsv}
+              disabled={exportandoCsv || loading || alunosFiltrados.length === 0}
+              className="text-xs text-slate-700 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50/50 shadow-xs"
+              title="Exportar relatório formatado em CSV com agrupamento por turma e nota institucional"
+            >
+              {exportandoCsv ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-emerald-600" />
+              ) : (
+                <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+              )}
+              Relatório CSV
+            </Button>
 
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm" className="text-xs text-slate-700">
-                <TrendingUp className="mr-1.5 h-3.5 w-3.5 text-blue-600" />
-                Promover Semestres
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent className="bg-white">
-              <AlertDialogHeader>
-                <AlertDialogTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
-                  Confirmar Promoção Semestral em Lote?
-                </AlertDialogTitle>
-                <AlertDialogDescription className="text-xs text-slate-600 leading-relaxed">
-                  Isso promoverá todos os alunos para o próximo semestre letivo. Alunos que já estão
-                  no 10º semestre permanecerão no 10º semestre.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel className="text-xs">Cancelar</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handlePromoverSemestres}
-                  className="bg-[#1d4ed8] hover:bg-[#1e40af] text-xs font-semibold"
-                >
-                  {promovendo ? 'Promovendo...' : 'Sim, Promover Todos'}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            {/* Botão Exportar PDF */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportarPdf}
+              disabled={exportandoPdf || loading || alunosFiltrados.length === 0}
+              className="text-xs text-slate-700 hover:text-red-700 hover:border-red-300 hover:bg-red-50/50 shadow-xs"
+              title="Exportar relatório institucional oficial em PDF Paisagem"
+            >
+              {exportandoPdf ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-red-600" />
+              ) : (
+                <FileText className="mr-1.5 h-3.5 w-3.5 text-red-600" />
+              )}
+              PDF Oficial
+            </Button>
+
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-xs text-slate-700">
+                  <TrendingUp className="mr-1.5 h-3.5 w-3.5 text-blue-600" />
+                  Promover Semestres
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-white">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
+                    Confirmar Promoção Semestral em Lote?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="text-xs text-slate-600 leading-relaxed">
+                    Isso promoverá todos os alunos para o próximo semestre letivo. Alunos que já
+                    estão no 10º semestre permanecerão no 10º semestre.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="text-xs">Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handlePromoverSemestres}
+                    className="bg-[#1d4ed8] hover:bg-[#1e40af] text-xs font-semibold"
+                  >
+                    {promovendo ? 'Promovendo...' : 'Sim, Promover Todos'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+          {/* Dica textual explicativa perto do botão */}
+          <p className="text-[11px] text-slate-500 text-left sm:text-right flex items-center gap-1 sm:justify-end">
+            <Info className="h-3 w-3 text-blue-600 shrink-0 inline" />
+            <span>
+              <strong>Exportar Dados (CSV):</strong> formato plano (flat) ideal para backup e
+              manipulação externa de dados no Excel/Sheets.
+            </span>
+          </p>
         </div>
       </div>
-
       {/* NOTA PEDAGÓGICA OFICIAL EM DESTAQUE NO TOPO DA PÁGINA */}
       <div className="relative overflow-hidden rounded-xl border-2 border-amber-300 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/60 p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start gap-4">

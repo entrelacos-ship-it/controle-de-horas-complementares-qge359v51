@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import type { Aluno, ConfiguracaoGlobal, Lancamento } from '@/types'
+import type { Aluno, Categoria, ConfiguracaoGlobal, Lancamento } from '@/types'
 
 export interface TurmaItemExportacao {
   id: string
@@ -508,4 +508,167 @@ export function exportarTurmaPdf(params: ExportarTurmaOpcoes) {
 
   const nomeArquivo = `horas-complementares-turma-${semestreAtual}.pdf`
   doc.save(nomeArquivo)
+}
+
+/**
+ * Sanitiza o nome de uma categoria NDE para ser usado com segurança como cabeçalho de coluna CSV
+ */
+export function sanitizarNomeColunaCategoria(nome: string): string {
+  return (
+    'horas_' +
+    nome
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // remove acentos
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_') // caracteres especiais viram underscore
+      .replace(/^_+|_+$/g, '') // remove underscores no início e fim
+  )
+}
+
+export interface ExportarTurmaDadosCsvOpcoes {
+  alunos: Aluno[]
+  lancamentos: Lancamento[]
+  categorias: Categoria[]
+  config: ConfiguracaoGlobal | null
+}
+
+/**
+ * Gera as linhas de dados brutos (flat CSV) para exportação, backup ou manipulação externa
+ */
+export function gerarLinhasDadosCsv(params: ExportarTurmaDadosCsvOpcoes): {
+  cabecalhos: string[]
+  linhas: (string | number)[][]
+  nomeArquivo: string
+  conteudoCsv: string
+} {
+  const { alunos, lancamentos, categorias, config } = params
+  const semestreAtual = config?.semestre_letivo_atual || '2026.2'
+  const metaCurso = Number(config?.meta_curso) || 200
+  const minimoSemestral = Number(config?.minimo_exigido_semestre) || 20
+
+  // Filtrar apenas categorias ativas (se nenhuma for ativa, usa todas como fallback)
+  const categoriasAtivas = categorias.filter((c) => c.ativo !== false)
+  const listaCategorias = categoriasAtivas.length > 0 ? categoriasAtivas : categorias
+
+  // Cabeçalhos base
+  const cabecalhosBase = [
+    'matricula',
+    'nome',
+    'email',
+    'turno',
+    'semestre_atual',
+    'periodo_entrada',
+    'horas_semestre_atual',
+    'total_geral_horas',
+    'horas_restantes_para_200h',
+    'percentual_integralizacao_curso',
+    'balanco_semestral',
+  ]
+
+  // Mapear cabeçalhos das categorias sanitizadas garantindo unicidade
+  const colunasCategorias: { id: string; nome: string; chave: string }[] = []
+  const chavesUsadas = new Set<string>()
+
+  listaCategorias.forEach((cat) => {
+    let chave = sanitizarNomeColunaCategoria(cat.nome || `cat_${cat.id}`)
+    if (!chave || chave === 'horas_') {
+      chave = `horas_categoria_${cat.id}`
+    }
+    let chaveUnica = chave
+    let contador = 2
+    while (chavesUsadas.has(chaveUnica)) {
+      chaveUnica = `${chave}_${contador}`
+      contador++
+    }
+    chavesUsadas.add(chaveUnica)
+    colunasCategorias.push({ id: cat.id, nome: cat.nome, chave: chaveUnica })
+  })
+
+  const cabecalhos = [...cabecalhosBase, ...colunasCategorias.map((c) => c.chave)]
+
+  // Escapar valores para CSV com delimitador ponto-e-vírgula
+  const escapeCsv = (val: string | number) => {
+    const str = String(val ?? '')
+    if (str.includes(';') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    return str
+  }
+
+  // Ordenar alunos alfabeticamente por nome
+  const alunosOrdenados = [...alunos].sort((a, b) => a.nome.localeCompare(b.nome))
+
+  const linhasMatriz: (string | number)[][] = []
+
+  alunosOrdenados.forEach((aluno) => {
+    const lancsAluno = lancamentos.filter((l) => l.aluno_id === aluno.id)
+    const totalGeral = lancsAluno.reduce((sum, l) => sum + (Number(l.horas_aceitas) || 0), 0)
+    const horasSemestre = lancsAluno
+      .filter((l) => l.semestre_letivo_atividade === semestreAtual)
+      .reduce((sum, l) => sum + (Number(l.horas_aceitas) || 0), 0)
+
+    const horasRestantesParaMeta = Math.max(0, metaCurso - totalGeral)
+    const percentualIntegralizacao =
+      metaCurso > 0 ? Math.min(100, Math.round((totalGeral / metaCurso) * 100)) : 0
+    const balancoSemestral = horasSemestre >= minimoSemestral ? 'CUMPRIU' : 'NAO_CUMPRIU'
+
+    // Horas por categoria NDE
+    const horasPorCategoriaValores = colunasCategorias.map((col) => {
+      const somaCat = lancsAluno
+        .filter((l) => l.categoria_id === col.id)
+        .reduce((sum, l) => sum + (Number(l.horas_aceitas) || 0), 0)
+      return somaCat
+    })
+
+    const linhaAluno: (string | number)[] = [
+      aluno.matricula,
+      aluno.nome,
+      aluno.email || '',
+      aluno.turno,
+      aluno.semestre_atual,
+      aluno.periodo_entrada,
+      horasSemestre,
+      totalGeral,
+      horasRestantesParaMeta,
+      percentualIntegralizacao,
+      balancoSemestral,
+      ...horasPorCategoriaValores,
+    ]
+
+    linhasMatriz.push(linhaAluno)
+  })
+
+  const linhasTexto: string[] = []
+  linhasTexto.push(cabecalhos.map(escapeCsv).join(';'))
+  linhasMatriz.forEach((row) => {
+    linhasTexto.push(row.map(escapeCsv).join(';'))
+  })
+
+  // UTF-8 com BOM (\uFEFF) para garantir abertura correta no Excel e Google Sheets pt-BR
+  const conteudoCsv = '\uFEFF' + linhasTexto.join('\r\n')
+  const nomeArquivo = `dados-alunos-${semestreAtual}.csv`
+
+  return {
+    cabecalhos,
+    linhas: linhasMatriz,
+    nomeArquivo,
+    conteudoCsv,
+  }
+}
+
+/**
+ * Exporta dados brutos em formato CSV (plano/flat) para backup e manipulação externa
+ */
+export function exportarTurmaDadosCsv(params: ExportarTurmaDadosCsvOpcoes) {
+  const { conteudoCsv, nomeArquivo } = gerarLinhasDadosCsv(params)
+
+  const blob = new Blob([conteudoCsv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nomeArquivo
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
