@@ -2210,8 +2210,8 @@ export default function Importacao() {
                 <span className="font-bold text-slate-900">
                   {linhasValidadas.length -
                     idsLinhasExcluidas.size -
-                    resumoValidacao.lancamentosDuplicadosIgnorados -
-                    resumoValidacao.linhasComErro}
+                    (resumoValidacao?.lancamentosDuplicadosIgnorados ?? 0) -
+                    (resumoValidacao?.linhasComErro ?? 0)}
                 </span>
               </div>
               {idsLinhasExcluidas.size > 0 && (
