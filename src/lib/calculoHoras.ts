@@ -81,6 +81,218 @@ export function validarNovoLancamento(params: {
   return { valido: true }
 }
 
+export interface LinhaMultiplaCategoria {
+  id: string
+  categoriaId: string
+  horas: number | string
+}
+
+export interface ResultadoValidacaoLinha {
+  linhaId: string
+  categoriaId: string
+  categoriaNome: string
+  horasValidas: number
+  horasAcumuladasAtuais: number
+  teto: number
+  saldoRestante: number
+  estourouTeto: boolean
+  bloqueadaPrevia: boolean
+  valida: boolean
+  erro?: string
+}
+
+export interface ResultadoValidacaoMultipla {
+  valido: boolean
+  erroGeral?: string
+  linhas: ResultadoValidacaoLinha[]
+  totalHorasOperacao: number
+}
+
+/**
+ * Validação de múltiplas linhas de categoria no mesmo lançamento:
+ * 1. Pelo menos uma linha
+ * 2. Recusa de categorias duplicadas
+ * 3. Validação individual de horas (> 0)
+ * 4. Verificação independente de teto para cada categoria
+ * 5. Checklist documental obrigatório
+ */
+export function validarMultiplosLancamentos(params: {
+  linhas: LinhaMultiplaCategoria[]
+  categorias: Categoria[]
+  lancamentosDoAluno: Lancamento[]
+  comprovanteOk: boolean
+  relatorioOk: boolean
+}): ResultadoValidacaoMultipla {
+  const { linhas, categorias, lancamentosDoAluno, comprovanteOk, relatorioOk } = params
+
+  if (!comprovanteOk || !relatorioOk) {
+    return {
+      valido: false,
+      erroGeral:
+        'É obrigatório atestar SIM para Comprovante de Participação e Relatório Reflexivo.',
+      linhas: [],
+      totalHorasOperacao: 0,
+    }
+  }
+
+  if (linhas.length === 0) {
+    return {
+      valido: false,
+      erroGeral: 'Adicione pelo menos uma categoria ao lançamento.',
+      linhas: [],
+      totalHorasOperacao: 0,
+    }
+  }
+
+  // Verifica duplicidade de categoria
+  const categoriasVistas = new Set<string>()
+  for (const l of linhas) {
+    if (!l.categoriaId) {
+      return {
+        valido: false,
+        erroGeral: 'Selecione uma categoria para todas as linhas da operação.',
+        linhas: [],
+        totalHorasOperacao: 0,
+      }
+    }
+    if (categoriasVistas.has(l.categoriaId)) {
+      const cat = categorias.find((c) => c.id === l.categoriaId)
+      return {
+        valido: false,
+        erroGeral: `A categoria "${cat?.nome || l.categoriaId}" foi adicionada mais de uma vez. Remova a duplicata para prosseguir.`,
+        linhas: [],
+        totalHorasOperacao: 0,
+      }
+    }
+    categoriasVistas.add(l.categoriaId)
+  }
+
+  let totalHorasOperacao = 0
+  const resultadosLinhas: ResultadoValidacaoLinha[] = []
+  let algumErro = false
+  let primeiroErro: string | undefined
+
+  for (const linha of linhas) {
+    const cat = categorias.find((c) => c.id === linha.categoriaId)
+    if (!cat) {
+      algumErro = true
+      primeiroErro = 'Categoria não encontrada.'
+      resultadosLinhas.push({
+        linhaId: linha.id,
+        categoriaId: linha.categoriaId,
+        categoriaNome: 'Desconhecida',
+        horasValidas: 0,
+        horasAcumuladasAtuais: 0,
+        teto: 0,
+        saldoRestante: 0,
+        estourouTeto: true,
+        bloqueadaPrevia: false,
+        valida: false,
+        erro: 'Categoria não encontrada no sistema.',
+      })
+      continue
+    }
+
+    const numHoras = Number(linha.horas)
+    if (isNaN(numHoras) || numHoras <= 0) {
+      algumErro = true
+      if (!primeiroErro) {
+        primeiroErro = `Informe uma quantidade de horas maior que zero para a categoria "${cat.nome}".`
+      }
+      resultadosLinhas.push({
+        linhaId: linha.id,
+        categoriaId: cat.id,
+        categoriaNome: cat.nome,
+        horasValidas: 0,
+        horasAcumuladasAtuais: calcularHorasCategoria(cat.id, lancamentosDoAluno),
+        teto: cat.teto_maximo_curso,
+        saldoRestante: Math.max(
+          0,
+          cat.teto_maximo_curso - calcularHorasCategoria(cat.id, lancamentosDoAluno),
+        ),
+        estourouTeto: false,
+        bloqueadaPrevia: isCategoriaBloqueada(
+          calcularHorasCategoria(cat.id, lancamentosDoAluno),
+          cat.teto_maximo_curso,
+        ),
+        valida: false,
+        erro: 'Horas devem ser maiores que zero.',
+      })
+      continue
+    }
+
+    const acumuladoAtual = calcularHorasCategoria(cat.id, lancamentosDoAluno)
+    const teto = Number(cat.teto_maximo_curso) || 0
+    const bloqueadaPrevia = isCategoriaBloqueada(acumuladoAtual, teto)
+    const novoTotal = acumuladoAtual + numHoras
+    const estourouTeto = novoTotal > teto
+    const saldoRestante = Math.max(0, teto - acumuladoAtual)
+
+    if (bloqueadaPrevia) {
+      algumErro = true
+      if (!primeiroErro) {
+        primeiroErro = `⛔ Categoria "${cat.nome}" já está bloqueada para este estudante (teto de ${teto}h atingido).`
+      }
+      resultadosLinhas.push({
+        linhaId: linha.id,
+        categoriaId: cat.id,
+        categoriaNome: cat.nome,
+        horasValidas: numHoras,
+        horasAcumuladasAtuais: acumuladoAtual,
+        teto,
+        saldoRestante,
+        estourouTeto: true,
+        bloqueadaPrevia: true,
+        valida: false,
+        erro: `Categoria bloqueada (já atingiu o teto de ${teto}h).`,
+      })
+      continue
+    }
+
+    if (estourouTeto) {
+      algumErro = true
+      if (!primeiroErro) {
+        primeiroErro = `⛔ O lançamento de ${numHoras}h em "${cat.nome}" ultrapassa o teto máximo (${acumuladoAtual}h atuais + ${numHoras}h = ${novoTotal}h / máx ${teto}h). Saldo restante disponível: ${saldoRestante}h.`
+      }
+      resultadosLinhas.push({
+        linhaId: linha.id,
+        categoriaId: cat.id,
+        categoriaNome: cat.nome,
+        horasValidas: numHoras,
+        horasAcumuladasAtuais: acumuladoAtual,
+        teto,
+        saldoRestante,
+        estourouTeto: true,
+        bloqueadaPrevia: false,
+        valida: false,
+        erro: `Ultrapassa teto de ${teto}h (saldo disponível: ${saldoRestante}h).`,
+      })
+      continue
+    }
+
+    totalHorasOperacao += numHoras
+    resultadosLinhas.push({
+      linhaId: linha.id,
+      categoriaId: cat.id,
+      categoriaNome: cat.nome,
+      horasValidas: numHoras,
+      horasAcumuladasAtuais: acumuladoAtual,
+      teto,
+      saldoRestante,
+      estourouTeto: false,
+      bloqueadaPrevia: false,
+      valida: true,
+    })
+  }
+
+  return {
+    valido: !algumErro,
+    erroGeral: primeiroErro,
+    linhas: resultadosLinhas,
+    totalHorasOperacao,
+  }
+}
+
 /**
  * Calcula todo o progresso de um aluno (total geral, por categoria, balanço semestral).
  */

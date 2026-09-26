@@ -16,10 +16,16 @@ export function formatarDataBr(dataStr?: string | Date): string {
   return d.toLocaleDateString('pt-BR')
 }
 
+export interface ItemDespachoCategoria {
+  categoria: Categoria
+  horas: number
+}
+
 export interface GerarDespachoParams {
   aluno: Aluno
-  categoriaAtividade: Categoria
-  horasLancamento: number
+  categoriaAtividade?: Categoria
+  horasLancamento?: number
+  atividadesLancadas?: ItemDespachoCategoria[]
   semestreAtividade: string
   lancamentosDoAluno: Lancamento[]
   categorias: Categoria[]
@@ -30,7 +36,10 @@ export interface GerarDespachoParams {
 /**
  * Gera o texto do despacho oficial conforme as regras do PRD:
  * - Abertura exata:
+ *   Para 1 categoria:
  *   "Horas Complementares aceitas pela Coordenação do Curso de Psicologia, Roberta Andrea de Oliveira, CRP. 06/77114, na categoria [Nome Categoria], totalizando [X] horas, de acordo com a tabela atual de [Semestre Letivo]."
+ *   Para múltiplas categorias na mesma operação:
+ *   "Horas Complementares aceitas pela Coordenação do Curso de Psicologia, Roberta Andrea de Oliveira, CRP. 06/77114, nas categorias: [Cat 1] ([X]h), [Cat 2] ([Y]h), totalizando [X+Y] horas, de acordo com a tabela atual de [Semestre Letivo]."
  * - "Situação atual do/a estudante:"
  *   Para cada categoria com horas: "[Nome Categoria] (máx [Teto]h): total geral [X] horas"
  * - Semestres do atual até o 10º:
@@ -44,7 +53,8 @@ export function gerarTextoDespacho(params: GerarDespachoParams): string {
   const {
     aluno,
     categoriaAtividade,
-    horasLancamento,
+    horasLancamento = 0,
+    atividadesLancadas,
     semestreAtividade,
     lancamentosDoAluno,
     categorias,
@@ -58,11 +68,37 @@ export function gerarTextoDespacho(params: GerarDespachoParams): string {
   const nomeCoordenadora = config.nome_da_coordenadora?.trim() || 'Roberta Andrea de Oliveira'
   const crpCoordenadora = config.crp_coordenadora?.trim() || '06/77114'
 
+  // Determina as categorias e horas lançadas nesta operação
+  const listaOperacao: ItemDespachoCategoria[] = []
+  if (atividadesLancadas && atividadesLancadas.length > 0) {
+    listaOperacao.push(...atividadesLancadas)
+  } else if (categoriaAtividade) {
+    listaOperacao.push({
+      categoria: categoriaAtividade,
+      horas: horasLancamento,
+    })
+  }
+
+  const totalHorasOperacao = listaOperacao.reduce((acc, item) => acc + (Number(item.horas) || 0), 0)
+
   // 1. Abertura parametrizada com a Coordenadora e seu CRP
   const linhas: string[] = []
-  linhas.push(
-    `Horas Complementares aceitas pela Coordenação do Curso de Psicologia, ${nomeCoordenadora}, CRP. ${crpCoordenadora}, na categoria ${categoriaAtividade.nome}, totalizando ${horasLancamento} horas, de acordo com a tabela atual de ${semestreAtividade || semestreAtualLetivo}.`,
-  )
+  if (listaOperacao.length > 1) {
+    const detalheCategorias = listaOperacao
+      .map((item) => `${item.categoria.nome} (${item.horas}h)`)
+      .join(', ')
+    linhas.push(
+      `Horas Complementares aceitas pela Coordenação do Curso de Psicologia, ${nomeCoordenadora}, CRP. ${crpCoordenadora}, nas categorias: ${detalheCategorias}, totalizando ${totalHorasOperacao} horas, de acordo com a tabela atual de ${semestreAtividade || semestreAtualLetivo}.`,
+    )
+  } else if (listaOperacao.length === 1) {
+    linhas.push(
+      `Horas Complementares aceitas pela Coordenação do Curso de Psicologia, ${nomeCoordenadora}, CRP. ${crpCoordenadora}, na categoria ${listaOperacao[0].categoria.nome}, totalizando ${listaOperacao[0].horas} horas, de acordo com a tabela atual de ${semestreAtividade || semestreAtualLetivo}.`,
+    )
+  } else {
+    linhas.push(
+      `Horas Complementares aceitas pela Coordenação do Curso de Psicologia, ${nomeCoordenadora}, CRP. ${crpCoordenadora}, de acordo com a tabela atual de ${semestreAtividade || semestreAtualLetivo}.`,
+    )
+  }
   linhas.push('')
   linhas.push('Situação atual do/a estudante:')
 

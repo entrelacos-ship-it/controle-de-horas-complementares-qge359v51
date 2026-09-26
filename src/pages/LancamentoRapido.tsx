@@ -9,7 +9,9 @@ import {
   calcularHorasCategoria,
   isCategoriaBloqueada,
   validarNovoLancamento,
+  validarMultiplosLancamentos,
   calcularProgressoAluno,
+  type LinhaMultiplaCategoria,
 } from '@/lib/calculoHoras'
 import { gerarTextoDespacho } from '@/lib/formatadorDespacho'
 import { gerarRelatorioAlunoPdf } from '@/lib/exportacaoRelatorioAlunoPdf'
@@ -27,6 +29,9 @@ import {
   AlertTriangle,
   Loader2,
   Calendar,
+  Plus,
+  Trash2,
+  Layers,
 } from 'lucide-react'
 import { LogoFausp } from '@/components/LogoFausp'
 import { Card, CardContent } from '@/components/ui/card'
@@ -83,6 +88,11 @@ export default function LancamentoRapido() {
   const [submitting, setSubmitting] = useState(false)
   const [gerandoPdf, setGerandoPdf] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+
+  // Linhas de categorias para lançamento múltiplo (quando não estiver em modo estorno)
+  const [linhasCategorias, setLinhasCategorias] = useState<LinhaMultiplaCategoria[]>([
+    { id: 'linha-1', categoriaId: '', horas: 10 },
+  ])
 
   // Passo 3: Despacho Automático Gerado
   const [despachoGerado, setDespachoGerado] = useState<string | null>(null)
@@ -183,13 +193,107 @@ export default function LancamentoRapido() {
 
   // Seleciona a primeira categoria ativa disponível por padrão se nenhuma selecionada
   useEffect(() => {
-    if (!categoriaId && categorias.length > 0) {
+    if (categorias.length > 0) {
       const ativa = categorias.find((c) => c.ativo !== false)
       if (ativa) {
-        setCategoriaId(ativa.id)
+        if (!categoriaId) {
+          setCategoriaId(ativa.id)
+        }
+        setLinhasCategorias((prev) => {
+          if (prev.length === 1 && !prev[0].categoriaId) {
+            return [{ ...prev[0], categoriaId: ativa.id }]
+          }
+          return prev
+        })
       }
     }
   }, [categorias, categoriaId])
+
+  // Validação em tempo real das linhas múltiplas de categorias
+  const validacaoMultipla = useMemo(() => {
+    if (isEstorno) return null
+    return validarMultiplosLancamentos({
+      linhas: linhasCategorias,
+      categorias,
+      lancamentosDoAluno: alunoLancamentos,
+      comprovanteOk,
+      relatorioOk,
+    })
+  }, [isEstorno, linhasCategorias, categorias, alunoLancamentos, comprovanteOk, relatorioOk])
+
+  // Total de horas da operação atual somando todas as categorias (ou estorno)
+  const totalHorasOperacaoAtual = useMemo(() => {
+    if (isEstorno) {
+      return Number(horasAceitas) || 0
+    }
+    return linhasCategorias.reduce((acc, l) => acc + (Number(l.horas) || 0), 0)
+  }, [isEstorno, horasAceitas, linhasCategorias])
+
+  // Simulação de lançamentos temporários para o preview do despacho e do progresso
+  const lancamentosSimuladosPreview = useMemo(() => {
+    if (!selectedAluno) return alunoLancamentos
+
+    const nowIso = new Date().toISOString()
+
+    if (isEstorno) {
+      const num = Number(horasAceitas) || 0
+      if (!catSelecionada || num === 0) return alunoLancamentos
+      const fakeEstorno: Lancamento = {
+        id: 'sim-estorno',
+        aluno_id: selectedAluno.id,
+        categoria_id: catSelecionada.id,
+        data_lancamento: new Date(dataAtividade || Date.now()).toISOString(),
+        semestre_letivo_atividade: semestreAtividade,
+        horas_aceitas: num,
+        comprovante_ok: comprovanteOk,
+        relatorio_ok: relatorioOk,
+        observacao: observacao || 'Estorno',
+        created: nowIso,
+        updated: nowIso,
+      }
+      return [fakeEstorno, ...alunoLancamentos]
+    }
+
+    // Múltiplas categorias
+    const fakeLancs: Lancamento[] = []
+    for (const l of linhasCategorias) {
+      const num = Number(l.horas) || 0
+      if (l.categoriaId && num > 0) {
+        fakeLancs.push({
+          id: `sim-${l.id}`,
+          aluno_id: selectedAluno.id,
+          categoria_id: l.categoriaId,
+          data_lancamento: new Date(dataAtividade || Date.now()).toISOString(),
+          semestre_letivo_atividade: semestreAtividade,
+          horas_aceitas: num,
+          comprovante_ok: comprovanteOk,
+          relatorio_ok: relatorioOk,
+          observacao: observacao || 'Lançamento Rápido',
+          created: nowIso,
+          updated: nowIso,
+        })
+      }
+    }
+    return [...fakeLancs, ...alunoLancamentos]
+  }, [
+    selectedAluno,
+    isEstorno,
+    horasAceitas,
+    catSelecionada,
+    dataAtividade,
+    semestreAtividade,
+    comprovanteOk,
+    relatorioOk,
+    observacao,
+    alunoLancamentos,
+    linhasCategorias,
+  ])
+
+  // Progresso em tempo real atualizado com as horas da operação simulada
+  const alunoProgressoComOperacao = useMemo(() => {
+    if (!selectedAluno || !config) return alunoProgresso
+    return calcularProgressoAluno(selectedAluno, lancamentosSimuladosPreview, categorias, config)
+  }, [selectedAluno, config, alunoProgresso, lancamentosSimuladosPreview, categorias])
 
   // Gerar despacho prévio/simulado caso o usuário ainda não tenha salvo o lançamento
   // ou atualizar com o despacho do formulário atual
@@ -197,16 +301,53 @@ export default function LancamentoRapido() {
     if (!selectedAluno || !config) return null
     if (despachoGerado) return despachoGerado
 
-    const catParaDespacho = catSelecionada || categorias[0]
-    if (!catParaDespacho) return null
+    if (isEstorno) {
+      const catParaDespacho = catSelecionada || categorias[0]
+      if (!catParaDespacho) return null
 
-    const numHoras = Number(horasAceitas) || 0
+      const numHoras = Number(horasAceitas) || 0
+      return gerarTextoDespacho({
+        aluno: selectedAluno,
+        categoriaAtividade: catParaDespacho,
+        horasLancamento: numHoras,
+        semestreAtividade,
+        lancamentosDoAluno: lancamentosSimuladosPreview,
+        categorias,
+        config,
+        dataDespacho: new Date(dataAtividade || Date.now()),
+      })
+    }
+
+    // Múltiplas categorias
+    const atividades: { categoria: Categoria; horas: number }[] = []
+    for (const l of linhasCategorias) {
+      const cat = categorias.find((c) => c.id === l.categoriaId)
+      const h = Number(l.horas) || 0
+      if (cat && h > 0) {
+        atividades.push({ categoria: cat, horas: h })
+      }
+    }
+
+    if (atividades.length === 0) {
+      const fallbackCat = categorias[0]
+      if (!fallbackCat) return null
+      return gerarTextoDespacho({
+        aluno: selectedAluno,
+        categoriaAtividade: fallbackCat,
+        horasLancamento: 0,
+        semestreAtividade,
+        lancamentosDoAluno: alunoLancamentos,
+        categorias,
+        config,
+        dataDespacho: new Date(dataAtividade || Date.now()),
+      })
+    }
+
     return gerarTextoDespacho({
       aluno: selectedAluno,
-      categoriaAtividade: catParaDespacho,
-      horasLancamento: numHoras,
+      atividadesLancadas: atividades,
       semestreAtividade,
-      lancamentosDoAluno: alunoLancamentos,
+      lancamentosDoAluno: lancamentosSimuladosPreview,
       categorias,
       config,
       dataDespacho: new Date(dataAtividade || Date.now()),
@@ -215,12 +356,15 @@ export default function LancamentoRapido() {
     selectedAluno,
     config,
     despachoGerado,
+    isEstorno,
     catSelecionada,
     categorias,
     horasAceitas,
     semestreAtividade,
-    alunoLancamentos,
+    lancamentosSimuladosPreview,
     dataAtividade,
+    linhasCategorias,
+    alunoLancamentos,
   ])
 
   // Filtragem rápida de alunos (<100ms)
@@ -254,17 +398,78 @@ export default function LancamentoRapido() {
     setDespachoGerado(null)
   }
 
-  const handleSomarHorasAtalho = (qtd: number) => {
-    const atual = Number(horasAceitas) || 0
+  const handleSomarHorasAtalho = (qtd: number, linhaId?: string) => {
     if (isEstorno) {
+      const atual = Number(horasAceitas) || 0
       setHorasAceitas(atual - qtd)
-    } else {
-      setHorasAceitas(Math.max(0, atual + qtd))
+      return
     }
+
+    if (linhaId) {
+      setLinhasCategorias((prev) =>
+        prev.map((l) => {
+          if (l.id === linhaId) {
+            const atual = Number(l.horas) || 0
+            return { ...l, horas: Math.max(0, atual + qtd) }
+          }
+          return l
+        }),
+      )
+    } else if (linhasCategorias.length > 0) {
+      // Aplica na primeira linha ou na ativa
+      setLinhasCategorias((prev) => {
+        const [primeira, ...resto] = prev
+        const atual = Number(primeira.horas) || 0
+        return [{ ...primeira, horas: Math.max(0, atual + qtd) }, ...resto]
+      })
+    }
+  }
+
+  const handleAdicionarLinha = () => {
+    // Escolhe uma categoria que ainda não foi selecionada
+    const idsUsados = new Set(linhasCategorias.map((l) => l.categoriaId).filter(Boolean))
+    const proximaDisponivel = categorias.find((c) => c.ativo !== false && !idsUsados.has(c.id))
+
+    const novaLinha: LinhaMultiplaCategoria = {
+      id: `linha-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      categoriaId: proximaDisponivel ? proximaDisponivel.id : '',
+      horas: 10,
+    }
+    setLinhasCategorias((prev) => [...prev, novaLinha])
+    setDespachoGerado(null)
+  }
+
+  const handleRemoverLinha = (id: string) => {
+    if (linhasCategorias.length <= 1) {
+      toast({
+        title: 'Operação não permitida',
+        description: 'É necessário manter pelo menos uma categoria no lançamento.',
+      })
+      return
+    }
+    setLinhasCategorias((prev) => prev.filter((l) => l.id !== id))
+    setDespachoGerado(null)
+  }
+
+  const handleAtualizarLinha = (
+    id: string,
+    campo: 'categoriaId' | 'horas',
+    valor: string | number,
+  ) => {
+    setLinhasCategorias((prev) =>
+      prev.map((l) => {
+        if (l.id === id) {
+          return { ...l, [campo]: valor }
+        }
+        return l
+      }),
+    )
+    setDespachoGerado(null)
   }
 
   const handleEstornoToggle = (checked: boolean) => {
     setIsEstorno(checked)
+    setDespachoGerado(null)
     const currentNum = Number(horasAceitas) || 0
     if (checked) {
       if (currentNum > 0) setHorasAceitas(-currentNum)
@@ -284,78 +489,69 @@ export default function LancamentoRapido() {
       return
     }
 
-    if (!categoriaId) {
-      setValidationError('Selecione uma categoria de atividade válida.')
+    if (!config) {
+      setValidationError('Configuração global do sistema não carregada.')
       return
     }
 
-    const cat = categorias.find((c) => c.id === categoriaId)
-    if (!cat) {
-      setValidationError('Categoria não encontrada.')
-      return
-    }
+    // MODO ESTORNO (1 categoria com horas negativas)
+    if (isEstorno) {
+      if (!categoriaId) {
+        setValidationError('Selecione uma categoria de atividade válida para o estorno.')
+        return
+      }
 
-    const numHoras = Number(horasAceitas)
-    if (isNaN(numHoras)) {
-      setValidationError('Informe uma quantidade de horas válida.')
-      return
-    }
+      const cat = categorias.find((c) => c.id === categoriaId)
+      if (!cat) {
+        setValidationError('Categoria não encontrada.')
+        return
+      }
 
-    if (isEstorno && numHoras >= 0) {
-      setValidationError('Lançamentos de estorno exigem horas negativas (ex: -10).')
-      return
-    }
+      const numHoras = Number(horasAceitas)
+      if (isNaN(numHoras)) {
+        setValidationError('Informe uma quantidade de horas válida.')
+        return
+      }
 
-    if (!isEstorno && numHoras <= 0) {
-      setValidationError(
-        'Lançamento normal exige horas positivas. Ative "Estorno" se deseja deduzir horas.',
-      )
-      return
-    }
+      if (numHoras >= 0) {
+        setValidationError('Lançamentos de estorno exigem horas negativas (ex: -10).')
+        return
+      }
 
-    // Calcula acumulado da categoria para validar bloqueio
-    const horasAcumuladas = calcularHorasCategoria(cat.id, alunoLancamentos)
-
-    const validacao = validarNovoLancamento({
-      horasAceitas: numHoras,
-      categoria: cat,
-      horasAcumuladasAtuais: horasAcumuladas,
-      comprovanteOk,
-      relatorioOk,
-      observacao,
-    })
-
-    if (!validacao.valido) {
-      setValidationError(validacao.erro || 'Validação falhou.')
-      return
-    }
-
-    // Salvar no backend
-    try {
-      setSubmitting(true)
-
-      // Muta no backend E sincroniza backup local imediatamente via AppContext
-      const novoLancamento = await appContext.criarLancamento({
-        aluno_id: selectedAluno.id,
-        categoria_id: cat.id,
-        data_lancamento: new Date(dataAtividade).toISOString(),
-        semestre_letivo_atividade: semestreAtividade,
-        horas_aceitas: numHoras,
-        comprovante_ok: comprovanteOk,
-        relatorio_ok: relatorioOk,
-        observacao: observacao.trim(),
+      const horasAcumuladas = calcularHorasCategoria(cat.id, alunoLancamentos)
+      const validacao = validarNovoLancamento({
+        horasAceitas: numHoras,
+        categoria: cat,
+        horasAcumuladasAtuais: horasAcumuladas,
+        comprovanteOk,
+        relatorioOk,
+        observacao,
       })
 
-      // Atualiza lista local de lançamentos para gerar despacho imediato
-      const novosLancamentos = [novoLancamento, ...alunoLancamentos]
-      setAlunoLancamentos(novosLancamentos)
+      if (!validacao.valido) {
+        setValidationError(validacao.erro || 'Validação falhou.')
+        return
+      }
 
-      // Atualiza progresso do aluno com o novo lançamento
-      if (config) {
+      try {
+        setSubmitting(true)
+        const novoLancamento = await appContext.criarLancamento({
+          aluno_id: selectedAluno.id,
+          categoria_id: cat.id,
+          data_lancamento: new Date(dataAtividade).toISOString(),
+          semestre_letivo_atividade: semestreAtividade,
+          horas_aceitas: numHoras,
+          comprovante_ok: comprovanteOk,
+          relatorio_ok: relatorioOk,
+          observacao: observacao.trim(),
+        })
+
+        const novosLancamentos = [novoLancamento, ...alunoLancamentos]
+        setAlunoLancamentos(novosLancamentos)
+
         const novoProg = calcularProgressoAluno(selectedAluno, novosLancamentos, categorias, config)
         setAlunoProgresso(novoProg)
 
-        // Gera o texto do despacho oficial formatado
         const textoDespacho = gerarTextoDespacho({
           aluno: selectedAluno,
           categoriaAtividade: cat,
@@ -366,21 +562,92 @@ export default function LancamentoRapido() {
           config,
           dataDespacho: new Date(),
         })
-
         setDespachoGerado(textoDespacho)
+
+        toast({
+          title: 'Estorno registrado com sucesso!',
+          description: `${numHoras}h em ${cat.nome}. Despacho oficial gerado.`,
+        })
+        setObservacao('')
+      } catch (err: unknown) {
+        console.error('Erro ao salvar estorno:', err)
+        setValidationError(
+          'Ocorreu um erro ao registrar o estorno no banco de dados. Verifique a conexão e tente novamente.',
+        )
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+
+    // MODO NORMAL (Múltiplas categorias na mesma operação)
+    const validacaoM = validarMultiplosLancamentos({
+      linhas: linhasCategorias,
+      categorias,
+      lancamentosDoAluno: alunoLancamentos,
+      comprovanteOk,
+      relatorioOk,
+    })
+
+    if (!validacaoM.valido) {
+      setValidationError(validacaoM.erroGeral || 'Verifique as linhas preenchidas antes de salvar.')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+
+      // Registra cada categoria como lançamento individual no backend / AppContext
+      const lancamentosCriados: Lancamento[] = []
+      const atividadesDespacho: { categoria: Categoria; horas: number }[] = []
+
+      for (const linha of validacaoM.linhas) {
+        const cat = categorias.find((c) => c.id === linha.categoriaId)!
+        const novo = await appContext.criarLancamento({
+          aluno_id: selectedAluno.id,
+          categoria_id: cat.id,
+          data_lancamento: new Date(dataAtividade).toISOString(),
+          semestre_letivo_atividade: semestreAtividade,
+          horas_aceitas: linha.horasValidas,
+          comprovante_ok: comprovanteOk,
+          relatorio_ok: relatorioOk,
+          observacao: observacao.trim(),
+        })
+        lancamentosCriados.push(novo)
+        atividadesDespacho.push({ categoria: cat, horas: linha.horasValidas })
       }
 
+      // Atualiza lançamentos e progresso com todas as novas entradas
+      const novosLancamentos = [...lancamentosCriados, ...alunoLancamentos]
+      setAlunoLancamentos(novosLancamentos)
+
+      const novoProg = calcularProgressoAluno(selectedAluno, novosLancamentos, categorias, config)
+      setAlunoProgresso(novoProg)
+
+      // Gera despacho consolidado contendo todas as categorias lançadas
+      const textoDespacho = gerarTextoDespacho({
+        aluno: selectedAluno,
+        atividadesLancadas: atividadesDespacho,
+        semestreAtividade,
+        lancamentosDoAluno: novosLancamentos,
+        categorias,
+        config,
+        dataDespacho: new Date(),
+      })
+      setDespachoGerado(textoDespacho)
+
+      const qtdCategorias = validacaoM.linhas.length
       toast({
-        title: 'Lançamento registrado com sucesso!',
-        description: `${numHoras > 0 ? `+${numHoras}h` : `${numHoras}h`} em ${cat.nome}. Despacho oficial gerado.`,
+        title: `${qtdCategorias} categoria${qtdCategorias > 1 ? 's' : ''} lançada${qtdCategorias > 1 ? 's' : ''} com sucesso!`,
+        description: `Total de +${validacaoM.totalHorasOperacao}h deferidas para ${selectedAluno.nome}. Despacho oficial gerado.`,
       })
 
-      // Mantém campos preparados para um eventual próximo lançamento
+      // Limpa observação para próxima operação
       setObservacao('')
     } catch (err: unknown) {
-      console.error('Erro ao salvar lançamento:', err)
+      console.error('Erro ao salvar múltiplos lançamentos:', err)
       setValidationError(
-        'Ocorreu um erro ao registrar o lançamento no banco de dados. Verifique a conexão e tente novamente.',
+        'Ocorreu um erro ao registrar as categorias no banco de dados. Tente novamente.',
       )
     } finally {
       setSubmitting(false)
@@ -432,10 +699,12 @@ export default function LancamentoRapido() {
     }
   }
 
-  // Estatísticas calculadas em tempo real para a barra inferior do Passo 3
+  // Estatísticas calculadas em tempo real para a barra inferior do Passo 3 (usando a projeção da operação)
   const semestreVigente = config?.semestre_letivo_atual || '2026.2'
   const minimoSemestre = config?.minimo_exigido_semestre || 20
   const metaCurso = config?.meta_curso || 200
+
+  const progressoExibicao = alunoProgressoComOperacao || alunoProgresso
 
   // Contagem de categorias bloqueadas do aluno
   const totalCategoriasBloqueadas = alunoProgresso?.categoriasBloqueadasIds.size || 0
@@ -738,7 +1007,10 @@ export default function LancamentoRapido() {
                         type="date"
                         required
                         value={dataAtividade}
-                        onChange={(e) => setDataAtividade(e.target.value)}
+                        onChange={(e) => {
+                          setDataAtividade(e.target.value)
+                          setDespachoGerado(null)
+                        }}
                         className="h-10 text-sm border-slate-300 focus-visible:ring-[#1d4ed8]"
                       />
                     </div>
@@ -756,7 +1028,10 @@ export default function LancamentoRapido() {
                         id="semestre-atividade"
                         required
                         value={semestreAtividade}
-                        onChange={(e) => setSemestreAtividade(e.target.value)}
+                        onChange={(e) => {
+                          setSemestreAtividade(e.target.value)
+                          setDespachoGerado(null)
+                        }}
                         className="h-10 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-8 text-sm shadow-2xs focus:border-[#1d4ed8] focus:outline-none focus:ring-1 focus:ring-[#1d4ed8]"
                       >
                         {semestresDisponiveis.map((sem) => (
@@ -771,158 +1046,387 @@ export default function LancamentoRapido() {
                   </div>
                 </div>
 
-                {/* Linha 2: Categoria NDE + Badge de Saldo à direita */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label
-                      htmlFor="categoria-select"
-                      className="text-xs font-semibold text-slate-700"
-                    >
-                      Categoria NDE:
-                    </Label>
-                    {catSelecionada && selectedAluno && (
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          categoriaBloqueadaAtual
-                            ? 'bg-red-100 text-red-800 border border-red-300'
-                            : 'bg-emerald-50 text-emerald-800 border border-emerald-300'
-                        }`}
-                      >
-                        {categoriaBloqueadaAtual
-                          ? `⛔ Teto Atingido: ${horasCategoriaAtual}h / ${catSelecionada.teto_maximo_curso}h`
-                          : `Saldo acumulado: ${horasCategoriaAtual}h / Teto: ${catSelecionada.teto_maximo_curso}h`}
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <select
-                      id="categoria-select"
-                      required
-                      value={categoriaId}
-                      onChange={(e) => setCategoriaId(e.target.value)}
-                      className="h-10 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-8 text-sm shadow-2xs focus:border-[#1d4ed8] focus:outline-none focus:ring-1 focus:ring-[#1d4ed8]"
-                    >
-                      <option value="">Selecione a Categoria NDE...</option>
-                      {categorias
-                        .filter((c) => c.ativo !== false)
-                        .map((cat) => {
-                          const horasCat = selectedAluno
-                            ? calcularHorasCategoria(cat.id, alunoLancamentos)
-                            : 0
-                          const bloqueada = isCategoriaBloqueada(horasCat, cat.teto_maximo_curso)
-
-                          return (
-                            <option
-                              key={cat.id}
-                              value={cat.id}
-                              disabled={bloqueada && !isEstorno}
-                              className={bloqueada ? 'text-red-600 bg-red-50' : ''}
-                            >
-                              {cat.nome} (Máx {cat.teto_maximo_curso}h) —{' '}
-                              {cat.regra_horas_unitaria || 'Conforme Edital'}
-                              {bloqueada ? ' ⛔ [BLOQUEADA]' : ''}
-                            </option>
-                          )
-                        })}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
-                  </div>
-                  {categoriaBloqueadaAtual && !isEstorno && (
-                    <p className="text-xs text-red-600 font-medium">
-                      ⛔ Categoria bloqueada para este estudante (teto de{' '}
-                      {catSelecionada?.teto_maximo_curso}h já atingido). Selecione outra categoria
-                      ou ative o modo estorno.
-                    </p>
-                  )}
-                </div>
-
-                {/* Linha 3: Horas Aceitas + Atalhos Rápidos (+5h, +10h, +20h, +30h) */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="horas-aceitas" className="text-xs font-semibold text-slate-700">
-                      Horas Aceitas:
-                    </Label>
-                    <span className="text-[11px] text-slate-400">
-                      (Para estornos corretivos, informe valor negativo)
+                {/* Toggle para estorno corretivo */}
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 border border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-blue-600" />
+                    <span className="text-xs font-semibold text-slate-800">
+                      {isEstorno ? 'Modo de Estorno Individual' : 'Lançamento Multi-Categoria NDE'}
                     </span>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="w-24">
-                      <Input
-                        id="horas-aceitas"
-                        type="number"
-                        step="0.5"
-                        required
-                        value={horasAceitas}
-                        onChange={(e) => setHorasAceitas(e.target.value)}
-                        className={`h-9 text-center font-bold text-sm ${
-                          isEstorno
-                            ? 'text-red-600 border-red-300 bg-red-50'
-                            : 'text-slate-900 border-slate-300'
-                        }`}
-                      />
-                    </div>
-                    <span className="text-xs font-medium text-slate-500">horas</span>
-
-                    {/* Botões rápidos de atalho (+5h, +10h, +20h, +30h) */}
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSomarHorasAtalho(5)}
-                        className="h-8 px-2.5 text-xs font-semibold border-slate-300 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
-                      >
-                        +5h
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSomarHorasAtalho(10)}
-                        className="h-8 px-2.5 text-xs font-semibold bg-[#1d4ed8] text-white border-[#1d4ed8] hover:bg-[#1e40af] hover:text-white"
-                      >
-                        +10h
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSomarHorasAtalho(20)}
-                        className="h-8 px-2.5 text-xs font-semibold border-slate-300 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
-                      >
-                        +20h
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSomarHorasAtalho(30)}
-                        className="h-8 px-2.5 text-xs font-semibold border-slate-300 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
-                      >
-                        +30h
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Toggle para estorno corretivo */}
-                  <div className="flex items-center justify-end pt-1">
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="estorno-switch"
-                        checked={isEstorno}
-                        onCheckedChange={handleEstornoToggle}
-                      />
-                      <Label
-                        htmlFor="estorno-switch"
-                        className="cursor-pointer text-[11px] font-medium text-slate-600"
-                      >
-                        Modo Estorno (dedução de horas)
-                      </Label>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="estorno-switch"
+                      checked={isEstorno}
+                      onCheckedChange={handleEstornoToggle}
+                    />
+                    <Label
+                      htmlFor="estorno-switch"
+                      className="cursor-pointer text-[11px] font-medium text-slate-600"
+                    >
+                      Modo Estorno
+                    </Label>
                   </div>
                 </div>
+
+                {/* CASO 1: MODO ESTORNO (1 categoria com horas negativas) */}
+                {isEstorno ? (
+                  <div className="space-y-4 rounded-xl border border-red-200/80 bg-red-50/30 p-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label
+                          htmlFor="categoria-estorno-select"
+                          className="text-xs font-semibold text-slate-700"
+                        >
+                          Categoria para Estorno:
+                        </Label>
+                        {catSelecionada && selectedAluno && (
+                          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-300">
+                            Saldo atual: {horasCategoriaAtual}h / Teto:{' '}
+                            {catSelecionada.teto_maximo_curso}h
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <select
+                          id="categoria-estorno-select"
+                          required
+                          value={categoriaId}
+                          onChange={(e) => setCategoriaId(e.target.value)}
+                          className="h-10 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-8 text-sm shadow-2xs focus:border-[#1d4ed8] focus:outline-none focus:ring-1 focus:ring-[#1d4ed8]"
+                        >
+                          <option value="">Selecione a Categoria para Estorno...</option>
+                          {categorias
+                            .filter((c) => c.ativo !== false)
+                            .map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.nome} (Máx {cat.teto_maximo_curso}h)
+                              </option>
+                            ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="horas-estorno"
+                        className="text-xs font-semibold text-slate-700"
+                      >
+                        Horas a Deduzir (negativo):
+                      </Label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="w-28">
+                          <Input
+                            id="horas-estorno"
+                            type="number"
+                            step="0.5"
+                            required
+                            value={horasAceitas}
+                            onChange={(e) => setHorasAceitas(e.target.value)}
+                            className="h-9 text-center font-bold text-sm text-red-600 border-red-300 bg-white"
+                          />
+                        </div>
+                        <span className="text-xs font-medium text-slate-500">horas</span>
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSomarHorasAtalho(5)}
+                            className="h-8 px-2.5 text-xs font-semibold border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            -5h
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSomarHorasAtalho(10)}
+                            className="h-8 px-2.5 text-xs font-semibold border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            -10h
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSomarHorasAtalho(20)}
+                            className="h-8 px-2.5 text-xs font-semibold border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            -20h
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* CASO 2: MODO MULTI-CATEGORIA NDE */
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-xs font-bold text-[#0f2b48] flex items-center gap-1.5">
+                          <span>Categorias NDE &amp; Cargas Horárias</span>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-2"
+                          >
+                            {linhasCategorias.length}{' '}
+                            {linhasCategorias.length === 1 ? 'categoria' : 'categorias'}
+                          </Badge>
+                        </Label>
+                        <p className="text-[11px] text-slate-500">
+                          Cada categoria é verificada de forma independente quanto ao seu teto
+                          regulamentar.
+                        </p>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAdicionarLinha}
+                        className="h-8 text-xs font-semibold border-blue-300 text-blue-700 hover:bg-blue-50 hover:border-blue-400 gap-1"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Adicionar Categoria</span>
+                      </Button>
+                    </div>
+
+                    {/* LISTA DE LINHAS DE CATEGORIAS */}
+                    <div className="space-y-3">
+                      {linhasCategorias.map((linha, index) => {
+                        const catLinha = categorias.find((c) => c.id === linha.categoriaId)
+                        const acumuladoCat =
+                          catLinha && selectedAluno
+                            ? calcularHorasCategoria(catLinha.id, alunoLancamentos)
+                            : 0
+                        const tetoCat = catLinha?.teto_maximo_curso || 0
+                        const horasLinhaNum = Number(linha.horas) || 0
+                        const novoTotalCat = acumuladoCat + horasLinhaNum
+                        const bloqueadaPrevia = catLinha
+                          ? isCategoriaBloqueada(acumuladoCat, tetoCat)
+                          : false
+                        const estourouTeto = catLinha ? novoTotalCat > tetoCat : false
+                        const saldoRestante = Math.max(0, tetoCat - acumuladoCat)
+
+                        // IDs já escolhidos em outras linhas para marcar no select
+                        const idsOutrasLinhas = new Set(
+                          linhasCategorias
+                            .filter((l) => l.id !== linha.id)
+                            .map((l) => l.categoriaId)
+                            .filter(Boolean),
+                        )
+                        const duplicada = idsOutrasLinhas.has(linha.categoriaId)
+
+                        return (
+                          <div
+                            key={linha.id}
+                            className={`rounded-xl border p-3.5 space-y-3 transition-colors ${
+                              bloqueadaPrevia || estourouTeto || duplicada
+                                ? 'border-red-300 bg-red-50/40'
+                                : 'border-slate-200/90 bg-slate-50/60 hover:bg-slate-50'
+                            }`}
+                          >
+                            {/* Header da Linha: Número, Badge de saldo e Botão de Remover */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-700">
+                                  {index + 1}
+                                </span>
+                                <span className="text-xs font-bold text-slate-800">
+                                  Linha {index + 1}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {catLinha && selectedAluno && (
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                      bloqueadaPrevia || estourouTeto
+                                        ? 'bg-red-100 text-red-800 border border-red-300'
+                                        : 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                                    }`}
+                                  >
+                                    {bloqueadaPrevia
+                                      ? `⛔ Teto Atingido (${acumuladoCat}h / ${tetoCat}h)`
+                                      : estourouTeto
+                                        ? `⛔ Estoura Teto (${acumuladoCat}h + ${horasLinhaNum}h = ${novoTotalCat}h / máx ${tetoCat}h)`
+                                        : `Saldo: ${acumuladoCat}h / Teto ${tetoCat}h (restam ${saldoRestante}h)`}
+                                  </span>
+                                )}
+
+                                {linhasCategorias.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRemoverLinha(linha.id)}
+                                    className="h-7 w-7 p-0 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                    title="Remover esta categoria do lançamento"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Campos da linha: Select de Categoria e Input de Horas com Atalhos */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                              {/* Select de Categoria NDE (7 colunas) */}
+                              <div className="md:col-span-7 space-y-1">
+                                <Label className="text-[11px] font-semibold text-slate-700">
+                                  Categoria NDE:
+                                </Label>
+                                <div className="relative">
+                                  <select
+                                    required
+                                    value={linha.categoriaId}
+                                    onChange={(e) =>
+                                      handleAtualizarLinha(linha.id, 'categoriaId', e.target.value)
+                                    }
+                                    className="h-9 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-1.5 pr-8 text-xs shadow-2xs focus:border-[#1d4ed8] focus:outline-none focus:ring-1 focus:ring-[#1d4ed8]"
+                                  >
+                                    <option value="">Selecione a Categoria NDE...</option>
+                                    {categorias
+                                      .filter((c) => c.ativo !== false)
+                                      .map((cat) => {
+                                        const horasCat = selectedAluno
+                                          ? calcularHorasCategoria(cat.id, alunoLancamentos)
+                                          : 0
+                                        const bloqueada = isCategoriaBloqueada(
+                                          horasCat,
+                                          cat.teto_maximo_curso,
+                                        )
+                                        const jaUsada = idsOutrasLinhas.has(cat.id)
+
+                                        return (
+                                          <option
+                                            key={cat.id}
+                                            value={cat.id}
+                                            disabled={bloqueada || jaUsada}
+                                            className={
+                                              bloqueada
+                                                ? 'text-red-600 bg-red-50'
+                                                : jaUsada
+                                                  ? 'text-slate-400 italic'
+                                                  : ''
+                                            }
+                                          >
+                                            {cat.nome} (Máx {cat.teto_maximo_curso}h)
+                                            {bloqueada ? ' ⛔ [TETO ATINGIDO]' : ''}
+                                            {jaUsada ? ' [JÁ SELECIONADA]' : ''}
+                                          </option>
+                                        )
+                                      })}
+                                  </select>
+                                  <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                                </div>
+                              </div>
+
+                              {/* Horas Aceitas + Atalhos Rápidos (5 colunas) */}
+                              <div className="md:col-span-5 space-y-1">
+                                <Label className="text-[11px] font-semibold text-slate-700">
+                                  Horas Deferidas:
+                                </Label>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-20">
+                                    <Input
+                                      type="number"
+                                      step="0.5"
+                                      min="0.5"
+                                      required
+                                      value={linha.horas}
+                                      onChange={(e) =>
+                                        handleAtualizarLinha(linha.id, 'horas', e.target.value)
+                                      }
+                                      className={`h-9 text-center font-bold text-xs ${
+                                        estourouTeto
+                                          ? 'text-red-600 border-red-300 bg-red-50'
+                                          : 'text-slate-900 border-slate-300 bg-white'
+                                      }`}
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleSomarHorasAtalho(5, linha.id)}
+                                      className="h-8 px-2 text-[11px] font-semibold border-slate-300 hover:bg-blue-50 hover:text-blue-700"
+                                    >
+                                      +5h
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleSomarHorasAtalho(10, linha.id)}
+                                      className="h-8 px-2 text-[11px] font-semibold bg-[#1d4ed8] text-white border-[#1d4ed8] hover:bg-[#1e40af] hover:text-white"
+                                    >
+                                      +10h
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleSomarHorasAtalho(20, linha.id)}
+                                      className="h-8 px-2 text-[11px] font-semibold border-slate-300 hover:bg-blue-50 hover:text-blue-700"
+                                    >
+                                      +20h
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Alertas específicos desta linha */}
+                            {duplicada && (
+                              <p className="text-[11px] text-red-600 font-semibold">
+                                ⛔ Esta categoria já está selecionada em outra linha desta mesma
+                                operação. Selecione outra categoria ou remova a duplicata.
+                              </p>
+                            )}
+
+                            {bloqueadaPrevia && (
+                              <p className="text-[11px] text-red-600 font-medium">
+                                ⛔ Categoria com teto de {tetoCat}h já integralmente atingido por
+                                este estudante ({acumuladoCat}h registradas). Não é possível deferir
+                                novos lançamentos normais nesta categoria.
+                              </p>
+                            )}
+
+                            {!bloqueadaPrevia && estourouTeto && (
+                              <p className="text-[11px] text-red-600 font-medium">
+                                ⛔ As {horasLinhaNum}h solicitadas somadas ao saldo de{' '}
+                                {acumuladoCat}h totalizam {novoTotalCat}h e ultrapassam o teto de{' '}
+                                {tetoCat}h. O saldo máximo aceitável para esta categoria é de{' '}
+                                <strong>{saldoRestante}h</strong>.
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Barra de Totais da Operação Multi-Categoria */}
+                    <div className="flex items-center justify-between rounded-lg bg-blue-50/80 px-3.5 py-2.5 border border-blue-200">
+                      <div className="text-xs text-blue-950">
+                        <span className="font-semibold">Total desta operação:</span>{' '}
+                        <span className="text-blue-700 font-bold">
+                          {linhasCategorias.length}{' '}
+                          {linhasCategorias.length === 1 ? 'categoria' : 'categorias'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-600">Soma de horas:</span>
+                        <Badge className="bg-[#1d4ed8] text-white font-mono text-xs font-bold px-2.5 py-0.5">
+                          +{totalHorasOperacaoAtual}h
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Linha 4: Checklist de Validação Documental Obrigatória (Idêntico ao Mockup) */}
                 <div className="rounded-xl border border-blue-200/90 bg-blue-50/40 p-4 space-y-2.5">
@@ -996,19 +1500,28 @@ export default function LancamentoRapido() {
                   <Button
                     type="submit"
                     disabled={
-                      submitting || !selectedAluno || (categoriaBloqueadaAtual && !isEstorno)
+                      submitting ||
+                      !selectedAluno ||
+                      (isEstorno && categoriaBloqueadaAtual && false) ||
+                      (!isEstorno && validacaoMultipla !== null && !validacaoMultipla.valido)
                     }
-                    className="w-full h-11 bg-[#0f2b48] hover:bg-[#091a2c] text-white font-bold text-xs tracking-wider uppercase shadow-md transition-all duration-150 active:scale-[0.99] flex items-center justify-center gap-2"
+                    className="w-full h-11 bg-[#0f2b48] hover:bg-[#091a2c] text-white font-bold text-xs tracking-wider uppercase shadow-md transition-all duration-150 active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {submitting ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Processando Lançamento...</span>
+                        <span>Processando Lançamentos...</span>
                       </>
                     ) : (
                       <>
                         <Sparkles className="h-4 w-4 text-amber-300" />
-                        <span>Registrar Lançamento e Gerar Despacho</span>
+                        <span>
+                          {isEstorno
+                            ? 'Registrar Estorno e Gerar Despacho'
+                            : linhasCategorias.length > 1
+                              ? `Registrar ${linhasCategorias.length} Categorias e Gerar Despacho (+${totalHorasOperacaoAtual}h)`
+                              : 'Registrar Lançamento e Gerar Despacho'}
+                        </span>
                       </>
                     )}
                   </Button>
@@ -1125,33 +1638,38 @@ export default function LancamentoRapido() {
                 )}
               </Button>
 
-              {/* LISTA-RESUMO DE SALDOS (Rótulo à esquerda, valor à direita) */}
+              {/* LISTA-RESUMO DE SALDOS (Rótulo à esquerda, valor à direita com projeção da operação) */}
               <div className="border-t border-slate-200/80 pt-3 space-y-2 text-xs">
                 <div className="flex items-center justify-between text-slate-600">
                   <span>Horas no Semestre ({semestreVigente}):</span>
                   <span className="font-semibold text-slate-900">
-                    {alunoProgresso?.horasSemestreAtual ?? 0}h
+                    {progressoExibicao?.horasSemestreAtual ?? 0}h
+                    {totalHorasOperacaoAtual !== 0 && (
+                      <span className="text-[10px] text-blue-600 font-normal ml-1">
+                        (com esta operação)
+                      </span>
+                    )}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-slate-600">
                   <span>Restante no Semestre Atual:</span>
                   <span className="font-semibold text-slate-900">
-                    {alunoProgresso?.restanteSemestreAtual ?? minimoSemestre}h
+                    {progressoExibicao?.restanteSemestreAtual ?? minimoSemestre}h
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-slate-600">
                   <span>Restante para Integralizar o Curso:</span>
                   <span className="font-semibold text-slate-900">
-                    {Math.max(0, metaCurso - (alunoProgresso?.totalGeralHoras ?? 0))}h
+                    {Math.max(0, metaCurso - (progressoExibicao?.totalGeralHoras ?? 0))}h
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between pt-1 border-t border-slate-200 text-sm font-bold text-slate-900">
                   <span>Total Geral Acumulado:</span>
                   <span className="font-['Outfit'] text-base text-[#0f2b48]">
-                    {alunoProgresso?.totalGeralHoras ?? 0}h
+                    {progressoExibicao?.totalGeralHoras ?? 0}h
                     <span className="text-xs font-normal text-slate-500"> / {metaCurso}h</span>
                   </span>
                 </div>

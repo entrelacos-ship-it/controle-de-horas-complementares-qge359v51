@@ -2,6 +2,7 @@ import {
   calcularHorasCategoria,
   isCategoriaBloqueada,
   validarNovoLancamento,
+  validarMultiplosLancamentos,
   calcularProgressoAluno,
 } from './calculoHoras'
 import { gerarTextoDespacho } from './formatadorDespacho'
@@ -365,6 +366,237 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
     throw new Error('CT-08.3 falhou: PDF com estorno e lançamentos negativos falhou')
   }
   resultados.push('CT-08.3: Geração de PDF com histórico e estornos auditáveis passou.')
+
+  // =========================================================================
+  // TESTES DE MULTI-CATEGORIA NO MESMO LANÇAMENTO (CT-MULTI-01 a CT-MULTI-06)
+  // =========================================================================
+
+  const mockCatPalestras: Categoria = {
+    id: 'cat_palestras',
+    nome: 'Palestras e Seminários de Psicologia',
+    regra_horas_unitaria: '5h por palestra',
+    teto_maximo_curso: 30,
+    ativo: true,
+  }
+
+  // CT-MULTI-01: Lançamento de múltiplas categorias simultâneas válidas (happy path)
+  const ctMulti01 = validarMultiplosLancamentos({
+    linhas: [
+      { id: 'l1', categoriaId: mockCatEventos.id, horas: 20 },
+      { id: 'l2', categoriaId: mockCatCursos.id, horas: 30 },
+      { id: 'l3', categoriaId: mockCatPalestras.id, horas: 10 },
+    ],
+    categorias: [mockCatEventos, mockCatCursos, mockCatPalestras],
+    lancamentosDoAluno: [],
+    comprovanteOk: true,
+    relatorioOk: true,
+  })
+
+  if (!ctMulti01.valido || ctMulti01.totalHorasOperacao !== 60 || ctMulti01.linhas.length !== 3) {
+    throw new Error('CT-MULTI-01 falhou: validação de múltiplas categorias válidas não aprovada')
+  }
+  resultados.push('CT-MULTI-01: Lançamento múltiplo com 3 categorias e 60h totais aprovado.')
+
+  // CT-MULTI-02: Recusa de categoria duplicada na mesma operação
+  const ctMulti02 = validarMultiplosLancamentos({
+    linhas: [
+      { id: 'l1', categoriaId: mockCatEventos.id, horas: 10 },
+      { id: 'l2', categoriaId: mockCatEventos.id, horas: 15 },
+    ],
+    categorias: [mockCatEventos, mockCatCursos],
+    lancamentosDoAluno: [],
+    comprovanteOk: true,
+    relatorioOk: true,
+  })
+
+  if (ctMulti02.valido || !ctMulti02.erroGeral?.includes('mais de uma vez')) {
+    throw new Error('CT-MULTI-02 falhou: permitiu mesma categoria duplicada na operação')
+  }
+  resultados.push('CT-MULTI-02: Recusa de categoria duplicada na mesma operação passou.')
+
+  // CT-MULTI-03: Bloqueio quando UMA das categorias estourar o teto independente
+  // mockCatEventos já tem 30h de 40h de teto. Tentativa: +20h estoura (50h > 40h).
+  // mockCatCursos tem 0h de 120h. Tentativa: +30h ok.
+  const lancamentosPreviaAluno: Lancamento[] = [
+    {
+      id: 'l_prev',
+      aluno_id: mockAluno3Semestre.id,
+      categoria_id: mockCatEventos.id,
+      data_lancamento: '2026-08-01',
+      semestre_letivo_atividade: '2026.2',
+      horas_aceitas: 30,
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2026-08-01',
+      updated: '2026-08-01',
+    },
+  ]
+
+  const ctMulti03 = validarMultiplosLancamentos({
+    linhas: [
+      { id: 'l1', categoriaId: mockCatEventos.id, horas: 20 }, // estoura teto (30 + 20 = 50 > 40)
+      { id: 'l2', categoriaId: mockCatCursos.id, horas: 30 }, // ok (0 + 30 <= 120)
+    ],
+    categorias: [mockCatEventos, mockCatCursos],
+    lancamentosDoAluno: lancamentosPreviaAluno,
+    comprovanteOk: true,
+    relatorioOk: true,
+  })
+
+  if (
+    ctMulti03.valido ||
+    !ctMulti03.erroGeral?.includes('ultrapassa o teto') ||
+    !ctMulti03.linhas.some((l) => l.categoriaId === mockCatEventos.id && l.estourouTeto) ||
+    !ctMulti03.linhas.some((l) => l.categoriaId === mockCatCursos.id && l.valida)
+  ) {
+    throw new Error('CT-MULTI-03 falhou: verificação independente de teto não identificou estouro')
+  }
+  resultados.push('CT-MULTI-03: Bloqueio quando uma das categorias estoura o teto passou.')
+
+  // CT-MULTI-04: Bloqueio de categoria que já estava bloqueada previamente
+  const lancamentosNoTetoCompleto: Lancamento[] = [
+    {
+      id: 'l_teto',
+      aluno_id: mockAluno3Semestre.id,
+      categoria_id: mockCatEventos.id,
+      data_lancamento: '2026-08-01',
+      semestre_letivo_atividade: '2026.2',
+      horas_aceitas: 40,
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2026-08-01',
+      updated: '2026-08-01',
+    },
+  ]
+
+  const ctMulti04 = validarMultiplosLancamentos({
+    linhas: [
+      { id: 'l1', categoriaId: mockCatEventos.id, horas: 5 },
+      { id: 'l2', categoriaId: mockCatCursos.id, horas: 20 },
+    ],
+    categorias: [mockCatEventos, mockCatCursos],
+    lancamentosDoAluno: lancamentosNoTetoCompleto,
+    comprovanteOk: true,
+    relatorioOk: true,
+  })
+
+  if (ctMulti04.valido || !ctMulti04.erroGeral?.includes('já está bloqueada')) {
+    throw new Error('CT-MULTI-04 falhou: categoria previamente bloqueada não foi rejeitada')
+  }
+  resultados.push('CT-MULTI-04: Rejeição de categoria previamente no teto máximo passou.')
+
+  // CT-MULTI-05: Exigência do duplo checklist documental para toda a operação
+  const ctMulti05SemRelatorio = validarMultiplosLancamentos({
+    linhas: [{ id: 'l1', categoriaId: mockCatCursos.id, horas: 10 }],
+    categorias: [mockCatCursos],
+    lancamentosDoAluno: [],
+    comprovanteOk: true,
+    relatorioOk: false,
+  })
+
+  if (ctMulti05SemRelatorio.valido) {
+    throw new Error('CT-MULTI-05 falhou: operação aceita sem checklist de relatório reflexivo')
+  }
+  resultados.push(
+    'CT-MULTI-05: Exigência obrigatória de duplo checklist comprovante/relatório passou.',
+  )
+
+  // CT-MULTI-06: Verificação de que o despacho consolida todas as categorias e recalcula totais
+  const lancamentosAposMulti: Lancamento[] = [
+    {
+      id: 'l_m1',
+      aluno_id: mockAluno3Semestre.id,
+      categoria_id: mockCatEventos.id,
+      data_lancamento: '2026-08-20',
+      semestre_letivo_atividade: '2026.2',
+      horas_aceitas: 40, // atinge teto 40h
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2026-08-20',
+      updated: '2026-08-20',
+    },
+    {
+      id: 'l_m2',
+      aluno_id: mockAluno3Semestre.id,
+      categoria_id: mockCatCursos.id,
+      data_lancamento: '2026-08-20',
+      semestre_letivo_atividade: '2026.2',
+      horas_aceitas: 20,
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2026-08-20',
+      updated: '2026-08-20',
+    },
+  ]
+
+  const despachoMulti = gerarTextoDespacho({
+    aluno: mockAluno3Semestre,
+    atividadesLancadas: [
+      { categoria: mockCatEventos, horas: 40 },
+      { categoria: mockCatCursos, horas: 20 },
+    ],
+    semestreAtividade: '2026.2',
+    lancamentosDoAluno: lancamentosAposMulti,
+    categorias: [mockCatEventos, mockCatCursos],
+    config: mockConfig,
+    dataDespacho: new Date('2026-08-20T12:00:00Z'),
+  })
+
+  // Verificações essenciais no despacho:
+  // 1. Abertura plural listando ambas as categorias e a soma total (60 horas)
+  if (
+    !despachoMulti.includes(
+      'nas categorias: Eventos científicos com apresentação de trabalho (40h), Cursos Livres Presenciais ou Online (20h), totalizando 60 horas',
+    )
+  ) {
+    throw new Error(
+      `CT-MULTI-06.1 falhou: Abertura consolidada do despacho não bate com esperado:\n${despachoMulti}`,
+    )
+  }
+
+  // 2. Situação atual com ambas as categorias e seus tetos
+  if (
+    !despachoMulti.includes(
+      'Eventos científicos com apresentação de trabalho (máx 40h): total geral 40 horas',
+    ) ||
+    !despachoMulti.includes('Cursos Livres Presenciais ou Online (máx 120h): total geral 20 horas')
+  ) {
+    throw new Error(
+      `CT-MULTI-06.2 falhou: Situação atual das categorias ausente ou incorreta:\n${despachoMulti}`,
+    )
+  }
+
+  // 3. Regra do numeral 0 (do 4º ao 10º semestre)
+  for (let s = 4; s <= 10; s++) {
+    if (!despachoMulti.includes(`Restante para integralizar o semestre (${s}º): 0 horas`)) {
+      throw new Error(`CT-MULTI-06.3 falhou: Regra do numeral 0 violada no semestre ${s}`)
+    }
+  }
+
+  // 4. Totais recalculados: total geral 60 horas, restante para 200h é 140h
+  if (
+    !despachoMulti.includes('Restante para integralizar o curso: 140 horas') ||
+    !despachoMulti.includes('60 horas')
+  ) {
+    throw new Error(
+      `CT-MULTI-06.4 falhou: Totais de curso não recalculados corretamente:\n${despachoMulti}`,
+    )
+  }
+
+  // 5. Aviso de categoria bloqueada (mockCatEventos atingiu teto de 40h)
+  if (
+    !despachoMulti.includes(
+      'Informamos que a categoria Eventos científicos com apresentação de trabalho atingiu o limite máximo e não será mais aceita',
+    )
+  ) {
+    throw new Error(
+      `CT-MULTI-06.5 falhou: Aviso formal de bloqueio de categoria ausente:\n${despachoMulti}`,
+    )
+  }
+
+  resultados.push(
+    'CT-MULTI-06: Despacho oficial multi-categoria consolida aberturas, saldos, numeral 0 e aviso de teto.',
+  )
 
   return { todosPassaram: true, resultados }
 }
