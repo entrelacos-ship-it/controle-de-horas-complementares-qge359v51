@@ -9,9 +9,13 @@ import {
   processarPlanilhaExcel,
   gerarPlanilhaModelo,
   exportarRelatorioErrosExcel,
+  calcularConciliacaoSaldos,
   LinhaImportacaoValidada,
   ResumoValidacao,
   ResultadoEfetivacaoImportacao,
+  ConciliacaoAluno,
+  ResumoConciliacao,
+  StatusConciliacao,
 } from '@/lib/importacaoPlanilha'
 import {
   FileSpreadsheet,
@@ -22,6 +26,7 @@ import {
   Download,
   RefreshCw,
   ArrowRight,
+  ArrowLeft,
   Database,
   Users,
   Clock,
@@ -30,6 +35,13 @@ import {
   ShieldCheck,
   Search,
   Filter,
+  ChevronDown,
+  ChevronRight,
+  Trash2,
+  Scale,
+  Calendar,
+  AlertCircle,
+  Check,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -44,6 +56,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 
 export default function Importacao() {
@@ -73,12 +93,23 @@ export default function Importacao() {
     Record<string, string>
   >({})
 
-  // Filtros da tabela de pré-visualização
+  // Exclusões de linhas do lote em processamento (apenas em memória, mantendo imutabilidade)
+  const [idsLinhasExcluidas, setIdsLinhasExcluidas] = useState<Set<string>>(new Set())
+
+  // Filtros da tabela de pré-visualização (Etapa 1)
   const [filtroStatus, setFiltroStatus] = useState<string>('todos')
   const [buscaTabela, setBuscaTabela] = useState<string>('')
 
-  // Etapa atual: 1 = upload & pré-visualização/validação, 2 = confirmação e efetivação
-  const [etapa, setEtapa] = useState<1 | 2>(1)
+  // Filtros e expansão da tabela de conciliação (Etapa 2)
+  const [filtroConciliacao, setFiltroConciliacao] = useState<string>('todos')
+  const [buscaConciliacao, setBuscaConciliacao] = useState<string>('')
+  const [alunoExpandidoMatricula, setAlunoExpandidoMatricula] = useState<string | null>(null)
+
+  // Modal de confirmação explícita de efetivação
+  const [dialogConfirmacaoAberto, setDialogConfirmacaoAberto] = useState(false)
+
+  // Etapa atual do fluxo: 1 = Pré-visualização, 2 = Conciliação de Saldos, 3 = Efetivação / Resultado
+  const [etapa, setEtapa] = useState<1 | 2 | 3>(1)
   const [efetivando, setEfetivando] = useState(false)
   const [progressoGravacao, setProgressoGravacao] = useState(0)
   const [resultadoEfetivacao, setResultadoEfetivacao] =
@@ -134,6 +165,7 @@ export default function Importacao() {
       setResumoValidacao(resultado.resumo)
       setNomeAba(resultado.nomeAbaUsada)
       setEtapa(1)
+      setIdsLinhasExcluidas(new Set())
       setResultadoEfetivacao(null)
     } catch (err: unknown) {
       console.error(err)
@@ -147,6 +179,39 @@ export default function Importacao() {
       setProcessandoArquivo(false)
     }
   }
+
+  // Alterna exclusão de linha específica do lote em processamento
+  const handleAlternarExclusaoLinhaLote = (idLinhaLote: string) => {
+    setIdsLinhasExcluidas((prev) => {
+      const novo = new Set(prev)
+      if (novo.has(idLinhaLote)) {
+        novo.delete(idLinhaLote)
+        toast({
+          title: 'Linha restaurada no lote',
+          description: 'A atividade voltará a ser computada na importação.',
+        })
+      } else {
+        novo.add(idLinhaLote)
+        toast({
+          title: 'Linha excluída do lote',
+          description:
+            'A atividade foi desconsiderada deste lote de importação. Nada foi apagado do banco.',
+        })
+      }
+      return novo
+    })
+  }
+
+  // Cálculo reativo da conciliação de saldos aluno por aluno
+  const dadosConciliacao = React.useMemo(() => {
+    return calcularConciliacaoSaldos({
+      linhasLote: linhasValidadas,
+      idsLinhasExcluidas,
+      alunosExistentes,
+      lancamentosExistentes,
+      categoriasNde,
+    })
+  }, [linhasValidadas, idsLinhasExcluidas, alunosExistentes, lancamentosExistentes, categoriasNde])
 
   const handleArquivoSelecionado = (file: File) => {
     if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
@@ -218,8 +283,32 @@ export default function Importacao() {
     return true
   })
 
-  // Efetivar Importação (Etapa 2)
+  // Mapa de conciliação por matrícula para consulta rápida na efetivação
+  const mapaConciliacaoPorMatricula = React.useMemo(() => {
+    const mapa = new Map<string, ConciliacaoAluno>()
+    dadosConciliacao.alunosConciliacao.forEach((a) => mapa.set(a.matricula.trim().toUpperCase(), a))
+    return mapa
+  }, [dadosConciliacao])
+
+  // Filtragem da lista de conciliação (Etapa 2)
+  const alunosConciliacaoFiltrados = dadosConciliacao.alunosConciliacao.filter((aluno) => {
+    if (filtroConciliacao !== 'todos') {
+      if (filtroConciliacao !== aluno.statusConciliacao) return false
+    }
+
+    if (buscaConciliacao.trim()) {
+      const q = buscaConciliacao.toLowerCase()
+      const matchNome = aluno.nome.toLowerCase().includes(q)
+      const matchMat = aluno.matricula.toLowerCase().includes(q)
+      if (!matchNome && !matchMat) return false
+    }
+
+    return true
+  })
+
+  // Efetivar Importação Definitiva com confirmação explícita (Etapa 3)
   const handleEfetivarImportacao = async () => {
+    setDialogConfirmacaoAberto(false)
     if (!linhasValidadas || linhasValidadas.length === 0) return
 
     setEfetivando(true)
@@ -230,6 +319,11 @@ export default function Importacao() {
     let lancamentosCriados = 0
     let lancamentosIgnoradosDuplicados = 0
     const errosAoGravar: Array<{ linhaNumero: number; item: string; motivo: string }> = []
+
+    // Captura snapshot da auditoria de conciliação no exato momento da efetivação
+    const totalAlunosConciliadosNoMomento = dadosConciliacao.resumo.totalConciliados
+    const totalAlunosDivergentesNoMomento = dadosConciliacao.resumo.totalDivergentes
+    const totalAlunosSemReferenciaNoMomento = dadosConciliacao.resumo.totalSemReferencia
 
     // 1. Processar Alunos (mapa em memória para ids reais do PocketBase)
     const mapaMatriculaParaId = new Map<string, string>()
@@ -249,6 +343,7 @@ export default function Importacao() {
     >()
 
     linhasValidadas.forEach((linha) => {
+      // Ignora se todas as linhas desse aluno foram excluídas pelo usuário
       if (linha.matricula && !alunosParaProcessar.has(linha.matricula)) {
         alunosParaProcessar.set(linha.matricula, {
           matricula: linha.matricula,
@@ -300,6 +395,11 @@ export default function Importacao() {
     for (let i = 0; i < totalLinhas; i++) {
       const linha = linhasValidadas[i]
 
+      // Ignora linhas excluídas manualmente do lote na etapa de conciliação
+      if (idsLinhasExcluidas.has(linha.idLinhaLote)) {
+        continue
+      }
+
       // Ignora linhas com erro estrutural grave ou já duplicadas
       if (linha.status === 'erro' || !linha.categoriaIdCorrespondente) {
         if (linha.status === 'erro') {
@@ -327,6 +427,21 @@ export default function Importacao() {
         continue
       }
 
+      // Identifica status de conciliação do aluno para registrar na observação
+      const dadosAlunoConciliacao = mapaConciliacaoPorMatricula.get(linha.matricula)
+      const tagConciliacao =
+        dadosAlunoConciliacao?.statusConciliacao === 'CONCILIADO'
+          ? '[Conciliado OK]'
+          : dadosAlunoConciliacao?.statusConciliacao === 'DIVERGENTE'
+            ? `[Conciliação Divergente: proj ${dadosAlunoConciliacao.saldoProjetado}h / decl ${dadosAlunoConciliacao.saldoDeclarado}h]`
+            : '[Conciliação Sem Referência]'
+
+      // Monta a observação com formato legado e auditoria
+      // Exemplo: "[Importação legada] [Conciliado OK] Histórico importado via planilha..."
+      const observacaoComAuditoria = linha.observacao.startsWith('[Importação legada]')
+        ? linha.observacao.replace('[Importação legada]', `[Importação legada] ${tagConciliacao}`)
+        : `[Importação legada] ${tagConciliacao} ${linha.observacao}`
+
       try {
         await criarLancamento({
           aluno_id: alunoIdReal,
@@ -336,7 +451,7 @@ export default function Importacao() {
           horas_aceitas: linha.horas,
           comprovante_ok: true, // Checklist OK por padrão na importação legada
           relatorio_ok: true, // Checklist OK por padrão na importação legada
-          observacao: linha.observacao,
+          observacao: observacaoComAuditoria,
         })
         lancamentosCriados++
       } catch (err: unknown) {
@@ -357,17 +472,20 @@ export default function Importacao() {
       lancamentosCriados,
       lancamentosIgnoradosDuplicados,
       errosAoGravar,
+      totalAlunosConciliadosNoMomento,
+      totalAlunosDivergentesNoMomento,
+      totalAlunosSemReferenciaNoMomento,
     })
 
     setEfetivando(false)
-    setEtapa(2)
+    setEtapa(3)
 
     // Recarregar os dados do banco para que próximas operações estejam em sincronia
     carregarDadosDoBanco()
 
     toast({
       title: 'Importação concluída com sucesso!',
-      description: `${lancamentosCriados} lançamentos e ${alunosCriados + alunosAtualizados} alunos processados.`,
+      description: `${lancamentosCriados} lançamentos e ${alunosCriados + alunosAtualizados} alunos processados (${totalAlunosConciliadosNoMomento} conciliados).`,
     })
   }
 
@@ -394,6 +512,7 @@ export default function Importacao() {
     setArquivoBuffer(null)
     setLinhasValidadas([])
     setResumoValidacao(null)
+    setIdsLinhasExcluidas(new Set())
     setEtapa(1)
     setResultadoEfetivacao(null)
     setMapeamentoManualCategorias({})
@@ -557,6 +676,73 @@ export default function Importacao() {
             </div>
           </div>
 
+          {/* INDICADOR DE ETAPAS (WIZARD 3 ETAPAS) */}
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Fluxo de Importação:
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                {/* Etapa 1 */}
+                <button
+                  type="button"
+                  onClick={() => setEtapa(1)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                    etapa === 1
+                      ? 'bg-[#1d4ed8] text-white shadow-xs font-semibold'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[11px] font-bold">
+                    1
+                  </span>
+                  <span>Pré-visualização</span>
+                </button>
+
+                <ChevronRight className="h-4 w-4 text-slate-300" />
+
+                {/* Etapa 2 */}
+                <button
+                  type="button"
+                  onClick={() => setEtapa(2)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                    etapa === 2
+                      ? 'bg-[#1d4ed8] text-white shadow-xs font-semibold'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[11px] font-bold">
+                    2
+                  </span>
+                  <span>Conciliação de Saldos</span>
+                  {dadosConciliacao.resumo.totalDivergentes > 0 && (
+                    <Badge className="bg-amber-500 text-white text-[10px] py-0 px-1 ml-1 h-4">
+                      {dadosConciliacao.resumo.totalDivergentes} div
+                    </Badge>
+                  )}
+                </button>
+
+                <ChevronRight className="h-4 w-4 text-slate-300" />
+
+                {/* Etapa 3 */}
+                <div
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                    etapa === 3
+                      ? 'bg-emerald-600 text-white shadow-xs font-semibold'
+                      : 'text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[11px] font-bold">
+                    3
+                  </span>
+                  <span>Efetivação e Auditoria</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* CARDS COM RESUMO DOS NÚMEROS */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
             <Card className="border-slate-200 bg-white">
@@ -585,7 +771,11 @@ export default function Importacao() {
                 <div className="mt-1 font-['Outfit'] text-2xl font-bold text-amber-600">
                   {resumoValidacao.linhasComAviso}
                 </div>
-                <span className="text-[10px] text-slate-400">Categorias ou duplicações</span>
+                <span className="text-[10px] text-slate-400">
+                  {resumoValidacao.linhasComSemestreFallback > 0
+                    ? `${resumoValidacao.linhasComSemestreFallback} com semestre padrão`
+                    : 'Categorias ou duplicações'}
+                </span>
               </CardContent>
             </Card>
 
@@ -683,8 +873,8 @@ export default function Importacao() {
             </Card>
           )}
 
-          {/* SE ETAPA 2: TELA DE RESULTADO PÓS-GRAVAÇÃO */}
-          {etapa === 2 && resultadoEfetivacao && (
+          {/* SE ETAPA 3: TELA DE RESULTADO PÓS-GRAVAÇÃO E AUDITORIA */}
+          {etapa === 3 && resultadoEfetivacao && (
             <Card className="border-emerald-200 bg-emerald-50/50 shadow-sm">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
@@ -693,24 +883,24 @@ export default function Importacao() {
                   </div>
                   <div>
                     <CardTitle className="font-['Outfit'] text-lg font-bold text-emerald-950">
-                      Importação Efetivada no Banco de Dados
+                      Etapa 3: Importação Efetivada no Banco de Dados
                     </CardTitle>
                     <CardDescription className="text-xs text-emerald-800">
-                      Os registros foram gravados e estão disponíveis imediatamente no painel de
-                      alunos e lançamentos.
+                      Os registros foram consolidados com imutabilidade e estão disponíveis
+                      imediatamente no painel de alunos e lançamentos.
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-lg bg-white p-3 border border-emerald-200">
+                  <div className="rounded-lg bg-white p-3 border border-emerald-200 shadow-2xs">
                     <span className="text-[11px] text-slate-500 font-medium">Alunos Criados</span>
                     <div className="text-xl font-bold text-emerald-700">
                       {resultadoEfetivacao.alunosCriados}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white p-3 border border-emerald-200">
+                  <div className="rounded-lg bg-white p-3 border border-emerald-200 shadow-2xs">
                     <span className="text-[11px] text-slate-500 font-medium">
                       Alunos Atualizados
                     </span>
@@ -718,7 +908,7 @@ export default function Importacao() {
                       {resultadoEfetivacao.alunosAtualizados}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white p-3 border border-emerald-200">
+                  <div className="rounded-lg bg-white p-3 border border-emerald-200 shadow-2xs">
                     <span className="text-[11px] text-slate-500 font-medium">
                       Lançamentos Gravados
                     </span>
@@ -726,12 +916,50 @@ export default function Importacao() {
                       {resultadoEfetivacao.lancamentosCriados}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-white p-3 border border-emerald-200">
+                  <div className="rounded-lg bg-white p-3 border border-emerald-200 shadow-2xs">
                     <span className="text-[11px] text-slate-500 font-medium">
                       Duplicados Ignorados
                     </span>
                     <div className="text-xl font-bold text-slate-600">
                       {resultadoEfetivacao.lancamentosIgnoradosDuplicados}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resumo de auditoria de conciliação registrado no momento da consolidação */}
+                <div className="rounded-xl border border-blue-200 bg-white p-4 shadow-2xs">
+                  <h4 className="text-xs font-bold text-[#0f2b48] flex items-center gap-1.5 uppercase tracking-wider mb-2">
+                    <Scale className="h-4 w-4 text-[#1d4ed8]" />
+                    Auditoria de Conciliação no Momento da Efetivação
+                  </h4>
+                  <p className="text-xs text-slate-600 mb-3">
+                    Estes números foram registrados nos históricos para prestação de contas à
+                    Coordenação e ao NDE:
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5 text-center">
+                      <span className="text-[11px] font-semibold text-emerald-800">
+                        Alunos Conciliados
+                      </span>
+                      <div className="text-lg font-bold text-emerald-700">
+                        {resultadoEfetivacao.totalAlunosConciliadosNoMomento}
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-center">
+                      <span className="text-[11px] font-semibold text-amber-800">
+                        Alunos Divergentes
+                      </span>
+                      <div className="text-lg font-bold text-amber-700">
+                        {resultadoEfetivacao.totalAlunosDivergentesNoMomento}
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-center">
+                      <span className="text-[11px] font-semibold text-slate-700">
+                        Sem Referência na Planilha
+                      </span>
+                      <div className="text-lg font-bold text-slate-700">
+                        {resultadoEfetivacao.totalAlunosSemReferenciaNoMomento}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -755,10 +983,10 @@ export default function Importacao() {
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <Button
                     variant="outline"
-                    onClick={() => setEtapa(1)}
+                    onClick={() => setEtapa(2)}
                     className="text-xs text-slate-700 border-slate-300"
                   >
-                    Voltar para Pré-visualização
+                    Ver Conciliação de Saldos
                   </Button>
                   <Button
                     onClick={handleResetar}
@@ -769,6 +997,544 @@ export default function Importacao() {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* ETAPA 2: CONCILIAÇÃO E CONFERÊNCIA DE SALDOS ALUNO POR ALUNO */}
+          {etapa === 2 && (
+            <div className="space-y-6">
+              {/* Resumo Executivo da Conciliação */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <Card className="border-slate-200 bg-white shadow-2xs">
+                  <CardContent className="p-3.5">
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      Total de Alunos
+                    </span>
+                    <div className="mt-1 font-['Outfit'] text-2xl font-bold text-[#0f2b48]">
+                      {dadosConciliacao.resumo.totalAlunos}
+                    </div>
+                    <span className="text-[10px] text-slate-400">No lote em conferência</span>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-emerald-200 bg-emerald-50/40 shadow-2xs">
+                  <CardContent className="p-3.5">
+                    <span className="text-[11px] font-semibold text-emerald-700">Conciliados</span>
+                    <div className="mt-1 font-['Outfit'] text-2xl font-bold text-emerald-600">
+                      {dadosConciliacao.resumo.totalConciliados}
+                    </div>
+                    <span className="text-[10px] text-emerald-600">Projetado = Declarado</span>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-amber-200 bg-amber-50/40 shadow-2xs">
+                  <CardContent className="p-3.5">
+                    <span className="text-[11px] font-semibold text-amber-700">Divergentes</span>
+                    <div className="mt-1 font-['Outfit'] text-2xl font-bold text-amber-600">
+                      {dadosConciliacao.resumo.totalDivergentes}
+                    </div>
+                    <span className="text-[10px] text-amber-600">Requerem atenção</span>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-slate-200 bg-slate-50/60 shadow-2xs">
+                  <CardContent className="p-3.5">
+                    <span className="text-[11px] font-semibold text-slate-600">Sem Referência</span>
+                    <div className="mt-1 font-['Outfit'] text-2xl font-bold text-slate-600">
+                      {dadosConciliacao.resumo.totalSemReferencia}
+                    </div>
+                    <span className="text-[10px] text-slate-400">Planilha sem total declarado</span>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-blue-200 bg-blue-50/40 shadow-2xs">
+                  <CardContent className="p-3.5">
+                    <span className="text-[11px] font-semibold text-[#1d4ed8]">
+                      Horas Ativas do Lote
+                    </span>
+                    <div className="mt-1 font-['Outfit'] text-2xl font-bold text-[#1d4ed8]">
+                      {dadosConciliacao.resumo.totalHorasLote}h
+                    </div>
+                    <span className="text-[10px] text-blue-600">
+                      Projetado total: {dadosConciliacao.resumo.totalHorasProjetadas}h
+                    </span>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Informação sobre exclusão cirúrgica de linhas */}
+              {idsLinhasExcluidas.size > 0 && (
+                <Alert className="border-amber-300 bg-amber-50 text-amber-900">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-xs font-bold text-amber-950">
+                    Ajuste Manual em Memória: {idsLinhasExcluidas.size}{' '}
+                    {idsLinhasExcluidas.size === 1 ? 'linha excluída' : 'linhas excluídas'} do lote
+                  </AlertTitle>
+                  <AlertDescription className="text-xs text-amber-800 leading-relaxed">
+                    As linhas marcadas para exclusão não serão gravadas no banco na efetivação. O
+                    banco de dados permanece intocado e imutável. Você pode restaurar qualquer linha
+                    expandindo o aluno correspondente.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Painel de Alunos para Conferência */}
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader className="pb-3 border-b border-slate-100">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <CardTitle className="font-['Outfit'] text-base font-bold text-[#0f2b48] flex items-center gap-2">
+                        <Scale className="h-5 w-5 text-[#1d4ed8]" />
+                        Etapa 2: Conferência e Conciliação de Saldos por Estudante
+                      </CardTitle>
+                      <CardDescription className="text-xs text-slate-500">
+                        Compare o saldo atual no banco, as horas a importar e o total declarado na
+                        planilha antes da consolidação.
+                      </CardDescription>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEtapa(1)}
+                        className="text-xs text-slate-700 border-slate-300"
+                      >
+                        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                        Voltar para Pré-visualização
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => setDialogConfirmacaoAberto(true)}
+                        disabled={efetivando || dadosConciliacao.resumo.totalHorasLote === 0}
+                        className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-sm"
+                      >
+                        {efetivando ? (
+                          <>
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Gravando ({progressoGravacao}%)...
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+                            Prosseguir para Efetivação Definitiva
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Barra de Progresso caso esteja gravando */}
+                  {efetivando && (
+                    <div className="mt-3 space-y-1">
+                      <div className="flex justify-between text-xs text-slate-600 font-medium">
+                        <span>Gravando registros no PocketBase...</span>
+                        <span>{progressoGravacao}%</span>
+                      </div>
+                      <Progress value={progressoGravacao} className="h-2" />
+                    </div>
+                  )}
+
+                  {/* Filtros da Tabela de Conciliação */}
+                  <div className="flex flex-col gap-2 pt-3 sm:flex-row sm:items-center">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <Input
+                        placeholder="Buscar aluno por nome ou matrícula..."
+                        value={buscaConciliacao}
+                        onChange={(e) => setBuscaConciliacao(e.target.value)}
+                        className="h-8 pl-8 text-xs bg-slate-50"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Select value={filtroConciliacao} onValueChange={setFiltroConciliacao}>
+                        <SelectTrigger className="h-8 w-[190px] text-xs bg-slate-50">
+                          <SelectValue placeholder="Status de Conciliação" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todos" className="text-xs">
+                            Todos ({dadosConciliacao.alunosConciliacao.length})
+                          </SelectItem>
+                          <SelectItem value="CONCILIADO" className="text-xs text-emerald-700">
+                            Conciliados ({dadosConciliacao.resumo.totalConciliados})
+                          </SelectItem>
+                          <SelectItem value="DIVERGENTE" className="text-xs text-amber-700">
+                            Divergentes ({dadosConciliacao.resumo.totalDivergentes})
+                          </SelectItem>
+                          <SelectItem value="SEM_REFERENCIA" className="text-xs text-slate-600">
+                            Sem Referência ({dadosConciliacao.resumo.totalSemReferencia})
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="p-0">
+                  <div className="max-h-[600px] overflow-auto">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead className="sticky top-0 z-10 bg-slate-100 text-[11px] font-bold text-slate-700 shadow-2xs">
+                        <tr>
+                          <th className="py-2.5 px-3 w-8"></th>
+                          <th className="py-2.5 px-3">Estudante</th>
+                          <th className="py-2.5 px-3">Matrícula / Turma</th>
+                          <th className="py-2.5 px-3 text-right">Saldo Atual (Banco)</th>
+                          <th className="py-2.5 px-3 text-right">+ Horas Lote</th>
+                          <th className="py-2.5 px-3 text-right">= Saldo Projetado</th>
+                          <th className="py-2.5 px-3 text-right">Saldo Declarado (Planilha)</th>
+                          <th className="py-2.5 px-3 text-center">Status Conciliação</th>
+                          <th className="py-2.5 px-3 text-center w-24">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {alunosConciliacaoFiltrados.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-xs text-slate-500">
+                              Nenhum estudante encontrado com o filtro selecionado.
+                            </td>
+                          </tr>
+                        ) : (
+                          alunosConciliacaoFiltrados.map((aluno) => {
+                            const expandido = alunoExpandidoMatricula === aluno.matricula
+                            const linhasDoAluno = linhasValidadas.filter(
+                              (l) => l.matricula.trim().toUpperCase() === aluno.matricula,
+                            )
+
+                            return (
+                              <React.Fragment key={aluno.matricula}>
+                                <tr
+                                  className={`transition-colors hover:bg-slate-50/80 cursor-pointer ${
+                                    aluno.statusConciliacao === 'DIVERGENTE'
+                                      ? 'bg-amber-50/30'
+                                      : aluno.statusConciliacao === 'CONCILIADO'
+                                        ? 'bg-emerald-50/20'
+                                        : ''
+                                  } ${expandido ? 'border-l-4 border-l-[#1d4ed8] bg-blue-50/20' : ''}`}
+                                  onClick={() =>
+                                    setAlunoExpandidoMatricula(expandido ? null : aluno.matricula)
+                                  }
+                                >
+                                  <td className="py-2.5 px-3 text-center">
+                                    {expandido ? (
+                                      <ChevronDown className="h-4 w-4 text-[#1d4ed8]" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                                    )}
+                                  </td>
+
+                                  <td className="py-2.5 px-3">
+                                    <div className="font-semibold text-slate-900">{aluno.nome}</div>
+                                    <div className="text-[10px] text-slate-500">{aluno.email}</div>
+                                  </td>
+
+                                  <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700">
+                                    <div>{aluno.matricula}</div>
+                                    <div className="text-[10px] font-sans text-slate-500">
+                                      {aluno.periodoEntrada} · {aluno.semestreAtual}º Sem ·{' '}
+                                      {aluno.turno}
+                                    </div>
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                                    {aluno.saldoBancoAtual}h
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-right font-mono font-semibold text-[#1d4ed8]">
+                                    +{aluno.horasLote}h
+                                    <span className="block text-[10px] font-sans text-slate-400">
+                                      {aluno.totalLinhasAtivas}{' '}
+                                      {aluno.totalLinhasAtivas === 1 ? 'atividade' : 'atividades'}
+                                    </span>
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                                    {aluno.saldoProjetado}h
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-right font-mono">
+                                    {aluno.saldoDeclarado !== undefined ? (
+                                      <span className="font-bold text-slate-800">
+                                        {aluno.saldoDeclarado}h
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 text-[11px]">
+                                        Não declarado
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-center">
+                                    {aluno.statusConciliacao === 'CONCILIADO' ? (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-[10px] py-0 px-2 h-5 bg-emerald-100 text-emerald-800 border-emerald-300"
+                                      >
+                                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                                        CONCILIADO
+                                      </Badge>
+                                    ) : aluno.statusConciliacao === 'DIVERGENTE' ? (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] py-0 px-2 h-5 bg-amber-50 text-amber-800 border-amber-400"
+                                      >
+                                        <AlertTriangle className="mr-1 h-3 w-3" />
+                                        DIVERGENTE (
+                                        {aluno.diferenca !== undefined && aluno.diferenca > 0
+                                          ? `+${aluno.diferenca}`
+                                          : aluno.diferenca}
+                                        h)
+                                      </Badge>
+                                    ) : (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-[10px] py-0 px-2 h-5 bg-slate-100 text-slate-600 border-slate-300"
+                                      >
+                                        SEM REFERÊNCIA
+                                      </Badge>
+                                    )}
+                                  </td>
+
+                                  <td
+                                    className="py-2.5 px-3 text-center"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        setAlunoExpandidoMatricula(
+                                          expandido ? null : aluno.matricula,
+                                        )
+                                      }
+                                      className="h-7 text-xs text-[#1d4ed8] hover:bg-blue-50"
+                                    >
+                                      {expandido ? 'Recolher' : 'Detalhar'}
+                                    </Button>
+                                  </td>
+                                </tr>
+
+                                {/* DETALHAMENTO EXPANDIDO DO ALUNO */}
+                                {expandido && (
+                                  <tr className="bg-slate-50/90 border-y border-slate-200">
+                                    <td colSpan={9} className="p-4">
+                                      <div className="space-y-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 pb-2">
+                                          <div>
+                                            <h4 className="text-xs font-bold text-[#0f2b48] flex items-center gap-1.5">
+                                              <Users className="h-4 w-4 text-[#1d4ed8]" />
+                                              Detalhamento de {aluno.nome} ({aluno.matricula})
+                                            </h4>
+                                            <p className="text-[11px] text-slate-500">
+                                              Conferência por categoria NDE e atividades individuais
+                                              no lote
+                                            </p>
+                                          </div>
+
+                                          <div className="flex items-center gap-2">
+                                            {aluno.statusConciliacao === 'DIVERGENTE' && (
+                                              <span className="text-xs text-amber-800 bg-amber-100/70 px-2.5 py-1 rounded-md font-medium">
+                                                Divergência: projetado {aluno.saldoProjetado}h vs
+                                                planilha {aluno.saldoDeclarado}h (dif{' '}
+                                                {aluno.diferenca}h)
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Tabela de Categorias NDE para este aluno */}
+                                        <div>
+                                          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                                            Saldos por Categoria Regulamentar NDE
+                                          </span>
+                                          {aluno.categorias.length === 0 ? (
+                                            <p className="text-xs text-slate-400 italic">
+                                              Nenhuma categoria ativa para este aluno ainda.
+                                            </p>
+                                          ) : (
+                                            <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs">
+                                              <thead className="bg-slate-100 text-[10px] font-bold text-slate-600">
+                                                <tr>
+                                                  <th className="py-1.5 px-3">Categoria</th>
+                                                  <th className="py-1.5 px-3 text-right">
+                                                    Banco Atual
+                                                  </th>
+                                                  <th className="py-1.5 px-3 text-right">
+                                                    Horas Lote Ativas
+                                                  </th>
+                                                  <th className="py-1.5 px-3 text-right">
+                                                    Projetado Total
+                                                  </th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100">
+                                                {aluno.categorias.map((c) => (
+                                                  <tr
+                                                    key={c.categoriaId}
+                                                    className="hover:bg-slate-50"
+                                                  >
+                                                    <td className="py-1.5 px-3 font-medium text-slate-800">
+                                                      {c.categoriaNome}
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono text-slate-600">
+                                                      {c.horasBancoAtual}h
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-semibold text-[#1d4ed8]">
+                                                      +{c.horasLote}h
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold text-slate-900">
+                                                      {c.horasProjetadas}h
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          )}
+                                        </div>
+
+                                        {/* Atividades do Lote para este aluno com opção de exclusão pontual */}
+                                        <div>
+                                          <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                              Atividades Lidas da Planilha para Este Aluno (
+                                              {linhasDoAluno.length})
+                                            </span>
+                                            <span className="text-[10px] text-slate-500">
+                                              Clique em &quot;Excluir do Lote&quot; para descartar
+                                              uma linha divergente sem alterar o banco.
+                                            </span>
+                                          </div>
+
+                                          <div className="space-y-1.5">
+                                            {linhasDoAluno.map((linha) => {
+                                              const excluida = idsLinhasExcluidas.has(
+                                                linha.idLinhaLote,
+                                              )
+
+                                              return (
+                                                <div
+                                                  key={linha.idLinhaLote}
+                                                  className={`flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
+                                                    excluida
+                                                      ? 'bg-slate-100 border-dashed border-slate-300 opacity-60 line-through'
+                                                      : linha.status === 'erro'
+                                                        ? 'bg-red-50 border-red-200'
+                                                        : linha.isDuplicado
+                                                          ? 'bg-slate-50 border-slate-200'
+                                                          : 'bg-white border-slate-200 shadow-2xs'
+                                                  }`}
+                                                >
+                                                  <div className="space-y-0.5 flex-1 pr-3">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="font-mono text-[10px] text-slate-500">
+                                                        Linha {linha.linhaNumero}
+                                                      </span>
+                                                      <span className="font-semibold text-slate-900">
+                                                        {linha.categoriaTexto}
+                                                      </span>
+                                                      {linha.categoriaNomeOficial && (
+                                                        <span className="text-[10px] text-emerald-700">
+                                                          (NDE: {linha.categoriaNomeOficial})
+                                                        </span>
+                                                      )}
+                                                      <Badge
+                                                        variant="outline"
+                                                        className="text-[9px] py-0 px-1 border-blue-200 bg-blue-50 text-blue-700"
+                                                      >
+                                                        Semestre {linha.semestreAtividade}
+                                                        {linha.semestreFallbackUtilizado &&
+                                                          ' (fallback)'}
+                                                      </Badge>
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500">
+                                                      {linha.observacao} · Data:{' '}
+                                                      {linha.dataLancamento}
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="flex items-center gap-3 pt-2 sm:pt-0">
+                                                    <div className="font-mono font-bold text-slate-900 text-sm">
+                                                      {linha.horas}h
+                                                    </div>
+
+                                                    <Button
+                                                      type="button"
+                                                      variant={excluida ? 'outline' : 'ghost'}
+                                                      size="sm"
+                                                      onClick={() =>
+                                                        handleAlternarExclusaoLinhaLote(
+                                                          linha.idLinhaLote,
+                                                        )
+                                                      }
+                                                      className={`h-7 text-xs ${
+                                                        excluida
+                                                          ? 'text-emerald-700 hover:bg-emerald-50 border-emerald-300'
+                                                          : 'text-red-600 hover:bg-red-50 hover:text-red-700'
+                                                      }`}
+                                                    >
+                                                      {excluida ? (
+                                                        <>
+                                                          <Check className="mr-1 h-3 w-3" />
+                                                          Restaurar no Lote
+                                                        </>
+                                                      ) : (
+                                                        <>
+                                                          <Trash2 className="mr-1 h-3 w-3" />
+                                                          Excluir do Lote
+                                                        </>
+                                                      )}
+                                                    </Button>
+                                                  </div>
+                                                </div>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Rodapé da Etapa 2 */}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <ShieldCheck className="h-4 w-4 text-[#16a34a]" />
+                      <span>
+                        Histórico Imutável garantido: exclusões no lote descartam itens apenas antes
+                        da gravação.
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEtapa(1)}
+                        className="text-xs text-slate-700"
+                      >
+                        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                        Voltar à Pré-visualização
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => setDialogConfirmacaoAberto(true)}
+                        disabled={efetivando || dadosConciliacao.resumo.totalHorasLote === 0}
+                        className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-sm"
+                      >
+                        Prosseguir para Efetivação
+                        <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {/* ETAPA 1: TABELA DE PRÉ-VISUALIZAÇÃO / VALIDAÇÃO LINHA A LINHA */}
@@ -785,24 +1551,15 @@ export default function Importacao() {
                     </CardDescription>
                   </div>
 
-                  {/* Botão de Efetivação Principal */}
+                  {/* Botão para Avançar para a Etapa 2 de Conciliação */}
                   <div className="flex items-center gap-2">
                     <Button
-                      onClick={handleEfetivarImportacao}
-                      disabled={efetivando || resumoValidacao.totalLancamentosValidos === 0}
+                      onClick={() => setEtapa(2)}
+                      disabled={resumoValidacao.totalLancamentosValidos === 0}
                       className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-sm"
                     >
-                      {efetivando ? (
-                        <>
-                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                          Gravando ({progressoGravacao}%)...
-                        </>
-                      ) : (
-                        <>
-                          <Database className="mr-2 h-4 w-4" />
-                          Efetivar Importação ({resumoValidacao.totalLancamentosValidos} registros)
-                        </>
-                      )}
+                      Avançar para Conciliação de Saldos
+                      <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -869,10 +1626,11 @@ export default function Importacao() {
                         <th className="py-2.5 px-3">Turma/Semestre</th>
                         <th className="py-2.5 px-3">Categoria Mapeada</th>
                         <th className="py-2.5 px-3 text-right">Horas</th>
-                        <th className="py-2.5 px-3">Período</th>
+                        <th className="py-2.5 px-3">Semestre da Atividade</th>
+                        <th className="py-2.5 px-3">Saldo Declarado</th>
                         <th className="py-2.5 px-3">Validação & Auditoria</th>
                       </tr>
-                    </thead>
+                    </thead>{' '}
                     <tbody className="divide-y divide-slate-100">
                       {linhasFiltradas.length === 0 ? (
                         <tr>
@@ -980,10 +1738,33 @@ export default function Importacao() {
                               </td>
 
                               <td className="py-2 px-3 text-slate-600 whitespace-nowrap">
-                                <div>{linha.semestreAtividade}</div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-semibold text-slate-800">
+                                    {linha.semestreAtividade}
+                                  </span>
+                                  {linha.semestreFallbackUtilizado && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[9px] py-0 px-1 text-amber-700 border-amber-300 bg-amber-50"
+                                      title="Semestre padrão utilizado como fallback porque a linha não especificou o semestre"
+                                    >
+                                      fallback
+                                    </Badge>
+                                  )}
+                                </div>
                                 <div className="text-[10px] text-slate-400">
                                   {linha.dataLancamento}
                                 </div>
+                              </td>
+
+                              <td className="py-2 px-3 text-slate-700">
+                                {linha.saldoDeclaradoLinha !== undefined ? (
+                                  <span className="font-semibold text-slate-900 font-mono">
+                                    {linha.saldoDeclaradoLinha}h
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">—</span>
+                                )}
                               </td>
 
                               <td className="py-2 px-3 max-w-xs">
@@ -1032,21 +1813,12 @@ export default function Importacao() {
                     </Button>
                     <Button
                       size="sm"
-                      onClick={handleEfetivarImportacao}
-                      disabled={efetivando || resumoValidacao.totalLancamentosValidos === 0}
+                      onClick={() => setEtapa(2)}
+                      disabled={resumoValidacao.totalLancamentosValidos === 0}
                       className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-sm"
                     >
-                      {efetivando ? (
-                        <>
-                          <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                          Gravando ({progressoGravacao}%)...
-                        </>
-                      ) : (
-                        <>
-                          <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
-                          Confirmar e Efetivar Importação
-                        </>
-                      )}
+                      Ir para Conciliação de Saldos (Etapa 2)
+                      <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -1055,6 +1827,139 @@ export default function Importacao() {
           )}
         </div>
       )}
+
+      {/* MODAL DE CONFIRMAÇÃO EXPLÍCITA ANTES DA EFETIVAÇÃO DEFINITIVA */}
+      <Dialog open={dialogConfirmacaoAberto} onOpenChange={setDialogConfirmacaoAberto}>
+        <DialogContent className="sm:max-w-[550px]">
+          <DialogHeader>
+            <DialogTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48] flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-[#1d4ed8]" />
+              Confirmar Efetivação da Carga de Histórico
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Revise o resumo da conciliação de saldos antes de persistir os dados definitivamente
+              no sistema.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            {/* Resumo da Operação */}
+            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Alunos no lote:</span>
+                <span className="font-bold text-slate-900">
+                  {dadosConciliacao.resumo.totalAlunos}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Horas ativas a gravar:</span>
+                <span className="font-bold text-[#1d4ed8]">
+                  {dadosConciliacao.resumo.totalHorasLote}h
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Saldo total projetado pós-carga:</span>
+                <span className="font-bold text-slate-900">
+                  {dadosConciliacao.resumo.totalHorasProjetadas}h
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Linhas ativas no lote:</span>
+                <span className="font-bold text-slate-900">
+                  {linhasValidadas.length -
+                    idsLinhasExcluidas.size -
+                    resumoValidacao.lancamentosDuplicadosIgnorados -
+                    resumoValidacao.linhasComErro}
+                </span>
+              </div>
+              {idsLinhasExcluidas.size > 0 && (
+                <div className="flex justify-between text-amber-700">
+                  <span>Linhas excluídas manualmente do lote:</span>
+                  <span className="font-bold">{idsLinhasExcluidas.size}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Status de Conciliação no Momento */}
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2">
+                <span className="text-[10px] font-semibold text-emerald-800 uppercase block">
+                  Conciliados
+                </span>
+                <span className="font-['Outfit'] text-xl font-bold text-emerald-700">
+                  {dadosConciliacao.resumo.totalConciliados}
+                </span>
+              </div>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-2">
+                <span className="text-[10px] font-semibold text-amber-800 uppercase block">
+                  Divergentes
+                </span>
+                <span className="font-['Outfit'] text-xl font-bold text-amber-700">
+                  {dadosConciliacao.resumo.totalDivergentes}
+                </span>
+              </div>
+              <div className="rounded-lg bg-slate-100 border border-slate-200 p-2">
+                <span className="text-[10px] font-semibold text-slate-600 uppercase block">
+                  Sem Referência
+                </span>
+                <span className="font-['Outfit'] text-xl font-bold text-slate-700">
+                  {dadosConciliacao.resumo.totalSemReferencia}
+                </span>
+              </div>
+            </div>
+
+            {dadosConciliacao.resumo.totalDivergentes > 0 && (
+              <Alert className="border-amber-300 bg-amber-50 text-amber-900 py-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <AlertDescription className="text-[11px] text-amber-800 leading-snug">
+                  Existem{' '}
+                  <strong>{dadosConciliacao.resumo.totalDivergentes} alunos com divergência</strong>{' '}
+                  entre o saldo projetado e o declarado na planilha. Ao efetivar, a divergência será
+                  registrada no campo de observação para fins de auditoria acadêmica.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Ao confirmar, os novos lançamentos serão gravados com marcação{' '}
+              <strong>[Importação legada]</strong> e status de conciliação. Em conformidade com o
+              princípio do histórico imutável, esses registros não poderão ser excluídos
+              fisicamente.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDialogConfirmacaoAberto(false)}
+              className="text-xs"
+            >
+              Voltar e Revisar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleEfetivarImportacao}
+              disabled={efetivando}
+              className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold"
+            >
+              {efetivando ? (
+                <>
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Efetivando...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-1.5 h-3.5 w-3.5" />
+                  Confirmar e Efetivar Definitivamente
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

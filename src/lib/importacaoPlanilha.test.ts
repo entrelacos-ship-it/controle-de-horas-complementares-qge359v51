@@ -5,7 +5,9 @@ import {
   encontrarCategoriaCorrespondente,
   converterDataParaIso,
   gerarChaveDeducao,
+  normalizarSemestreLetivo,
   processarPlanilhaExcel,
+  calcularConciliacaoSaldos,
 } from './importacaoPlanilha'
 import type { Aluno, Categoria, Lancamento } from '@/types'
 
@@ -283,6 +285,274 @@ export function executarTestesImportacao(): { todosPassaram: boolean; resultados
 
   resultados.push(
     'TI-04: Processamento completo com validação, dedup e detecção de alunos existentes passou.',
+  )
+
+  // 6. Teste de parser de semestres letivos (2024.1 a 2026.1) com tolerância a formatos
+  const testesSemestre = [
+    { entrada: '2024.1', esperado: '2024.1' },
+    { entrada: '2024/1', esperado: '2024.1' },
+    { entrada: '2024-1', esperado: '2024.1' },
+    { entrada: '2024.2', esperado: '2024.2' },
+    { entrada: '2024/2', esperado: '2024.2' },
+    { entrada: '2025.1', esperado: '2025.1' },
+    { entrada: '2025-2', esperado: '2025.2' },
+    { entrada: '2026.1', esperado: '2026.1' },
+    { entrada: '1/2025', esperado: '2025.1' },
+    { entrada: '2º/2024', esperado: '2024.2' },
+    { entrada: '2025 1º semestre', esperado: '2025.1' },
+    { entrada: 'semestre invalido', esperado: null },
+    { entrada: '', esperado: null },
+  ]
+
+  for (const t of testesSemestre) {
+    const res = normalizarSemestreLetivo(t.entrada)
+    if (res !== t.esperado) {
+      throw new Error(
+        `TI-05 falhou para semestre "${t.entrada}": esperado "${t.esperado}", obtido "${res}"`,
+      )
+    }
+  }
+  resultados.push(
+    'TI-05: Parser de histórico com semestres letivos anteriores (2024.1 a 2026.1) e tolerância passou.',
+  )
+
+  // 7. Teste de fallback quando linha não informa semestre
+  const dadosPlanilhaSemSemestre = [
+    ['Matricula', 'Nome Aluno', 'Turno', 'Categoria', 'Horas', 'Data Atividade', 'Semestre'],
+    // Linha com semestre explícito 2024.2
+    [
+      'PSI2024101',
+      'Aluno Semestre 2024.2',
+      'Matutino',
+      'Artes e Cultura',
+      10,
+      '2024-10-10',
+      '2024.2',
+    ],
+    // Linha sem semestre informado: deve usar fallback '2026.1'
+    ['PSI2024102', 'Aluno Fallback Semestre', 'Noturno', 'Artes e Cultura', 10, '2026-02-15', ''],
+  ]
+
+  const wsSemSem = XLSX.utils.aoa_to_sheet(dadosPlanilhaSemSemestre)
+  const wbSemSem = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wbSemSem, wsSemSem, 'Semestre')
+  const bufferSemSem = XLSX.write(wbSemSem, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+
+  const procSemSem = processarPlanilhaExcel({
+    arquivoBuffer: bufferSemSem,
+    alunosExistentes: [],
+    categoriasNde: categoriasMock,
+    lancamentosExistentes: [],
+    semestreAtualPadrao: '2026.1',
+  })
+
+  if (
+    procSemSem.linhas[0].semestreAtividade !== '2024.2' ||
+    procSemSem.linhas[0].semestreFallbackUtilizado
+  ) {
+    throw new Error('TI-06.1 falhou: Linha 1 deveria manter 2024.2 sem fallback')
+  }
+  if (
+    procSemSem.linhas[1].semestreAtividade !== '2026.1' ||
+    !procSemSem.linhas[1].semestreFallbackUtilizado ||
+    procSemSem.resumo.linhasComSemestreFallback !== 1
+  ) {
+    throw new Error('TI-06.2 falhou: Linha 2 deveria ter assumido fallback 2026.1 e sinalizado')
+  }
+  resultados.push(
+    'TI-06: Fallback de semestre padrão com sinalização em linhas sem semestre passou.',
+  )
+
+  // 8. Teste de conciliação de saldos aluno por aluno:
+  // Casos: CONCILIADO, DIVERGENTE e SEM_REFERENCIA, além de exclusão pontual do lote
+  const alunoConcBanco1: Aluno = {
+    id: 'aluno_conc_1',
+    matricula: 'PSI_CONC_01',
+    nome: 'Aluno Conciliado Exato',
+    turno: 'Matutino',
+    semestre_atual: 5,
+    periodo_entrada: '2024.1',
+    email: 'conc1@aluno.fausp.br',
+  }
+
+  const alunoConcBanco2: Aluno = {
+    id: 'aluno_conc_2',
+    matricula: 'PSI_CONC_02',
+    nome: 'Aluno Divergente Saldo',
+    turno: 'Noturno',
+    semestre_atual: 4,
+    periodo_entrada: '2024.2',
+    email: 'conc2@aluno.fausp.br',
+  }
+
+  const lancExistentesConc: Lancamento[] = [
+    // Aluno 1 tem 20h já gravadas no banco
+    {
+      id: 'l_conc_1',
+      aluno_id: 'aluno_conc_1',
+      categoria_id: 'cat_ev',
+      data_lancamento: '2024-05-10',
+      semestre_letivo_atividade: '2024.1',
+      horas_aceitas: 20,
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2024-05-10',
+      updated: '2024-05-10',
+    },
+    // Aluno 2 tem 10h já gravadas no banco
+    {
+      id: 'l_conc_2',
+      aluno_id: 'aluno_conc_2',
+      categoria_id: 'cat_art',
+      data_lancamento: '2024-10-10',
+      semestre_letivo_atividade: '2024.2',
+      horas_aceitas: 10,
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2024-10-10',
+      updated: '2024-10-10',
+    },
+  ]
+
+  // Linhas do lote a conciliar:
+  // - Aluno 1: traz +10h na planilha e saldo declarado de 30h (Banco 20h + Lote 10h = 30h -> CONCILIADO)
+  // - Aluno 2: traz +20h na planilha e saldo declarado de 40h (Banco 10h + Lote 20h = 30h != 40h -> DIVERGENTE)
+  // - Aluno 3: aluno novo, traz +15h e NÃO declara total (-> SEM_REFERENCIA)
+  const linhasLoteConc = [
+    {
+      linhaNumero: 2,
+      idLinhaLote: 'linha_lote_1',
+      nome: 'Aluno Conciliado Exato',
+      matricula: 'PSI_CONC_01',
+      turno: 'Matutino' as const,
+      semestreAtual: 5,
+      periodoEntrada: '2024.1',
+      email: 'conc1@aluno.fausp.br',
+      categoriaTexto: 'Cursos Livres',
+      categoriaIdCorrespondente: 'cat_cu',
+      categoriaNomeOficial: 'Cursos Livres Presenciais ou Online',
+      horas: 10,
+      dataLancamento: '2025-05-20',
+      semestreAtividade: '2025.1',
+      semestreFallbackUtilizado: false,
+      observacao: '[Importação legada]',
+      status: 'valida' as const,
+      erros: [],
+      avisos: [],
+      saldoDeclaradoLinha: 30, // 20 banco + 10 lote = 30
+    },
+    {
+      linhaNumero: 3,
+      idLinhaLote: 'linha_lote_2',
+      nome: 'Aluno Divergente Saldo',
+      matricula: 'PSI_CONC_02',
+      turno: 'Noturno' as const,
+      semestreAtual: 4,
+      periodoEntrada: '2024.2',
+      email: 'conc2@aluno.fausp.br',
+      categoriaTexto: 'Eventos científicos',
+      categoriaIdCorrespondente: 'cat_ev',
+      categoriaNomeOficial: 'Eventos científicos com apresentação de trabalho',
+      horas: 20,
+      dataLancamento: '2025-08-10',
+      semestreAtividade: '2025.2',
+      semestreFallbackUtilizado: false,
+      observacao: '[Importação legada]',
+      status: 'valida' as const,
+      erros: [],
+      avisos: [],
+      saldoDeclaradoLinha: 40, // 10 banco + 20 lote = 30 != 40 declarado
+    },
+    {
+      linhaNumero: 4,
+      idLinhaLote: 'linha_lote_3',
+      nome: 'Aluno Sem Referencia Total',
+      matricula: 'PSI_CONC_03',
+      turno: 'Matutino' as const,
+      semestreAtual: 2,
+      periodoEntrada: '2025.1',
+      email: 'conc3@aluno.fausp.br',
+      categoriaTexto: 'Artes e Cultura',
+      categoriaIdCorrespondente: 'cat_art',
+      categoriaNomeOficial: 'Artes e Cultura',
+      horas: 15,
+      dataLancamento: '2026-03-10',
+      semestreAtividade: '2026.1',
+      semestreFallbackUtilizado: false,
+      observacao: '[Importação legada]',
+      status: 'valida' as const,
+      erros: [],
+      avisos: [],
+      saldoDeclaradoLinha: undefined, // Sem total na planilha
+    },
+  ]
+
+  const resultadoConc = calcularConciliacaoSaldos({
+    linhasLote: linhasLoteConc,
+    alunosExistentes: [alunoConcBanco1, alunoConcBanco2],
+    lancamentosExistentes: lancExistentesConc,
+    categoriasNde: categoriasMock,
+  })
+
+  const itemConc1 = resultadoConc.alunosConciliacao.find((a) => a.matricula === 'PSI_CONC_01')
+  const itemConc2 = resultadoConc.alunosConciliacao.find((a) => a.matricula === 'PSI_CONC_02')
+  const itemConc3 = resultadoConc.alunosConciliacao.find((a) => a.matricula === 'PSI_CONC_03')
+
+  if (
+    !itemConc1 ||
+    itemConc1.statusConciliacao !== 'CONCILIADO' ||
+    itemConc1.saldoProjetado !== 30
+  ) {
+    throw new Error(
+      `TI-07.1 falhou: Esperado CONCILIADO para aluno 1, obtido ${itemConc1?.statusConciliacao}`,
+    )
+  }
+
+  if (!itemConc2 || itemConc2.statusConciliacao !== 'DIVERGENTE' || itemConc2.diferenca !== -10) {
+    throw new Error(
+      `TI-07.2 falhou: Esperado DIVERGENTE com diferença -10 para aluno 2, obtido ${itemConc2?.statusConciliacao}`,
+    )
+  }
+
+  if (
+    !itemConc3 ||
+    itemConc3.statusConciliacao !== 'SEM_REFERENCIA' ||
+    itemConc3.saldoProjetado !== 15
+  ) {
+    throw new Error(
+      `TI-07.3 falhou: Esperado SEM_REFERENCIA para aluno 3, obtido ${itemConc3?.statusConciliacao}`,
+    )
+  }
+
+  if (
+    resultadoConc.resumo.totalConciliados !== 1 ||
+    resultadoConc.resumo.totalDivergentes !== 1 ||
+    resultadoConc.resumo.totalSemReferencia !== 1 ||
+    resultadoConc.resumo.totalHorasLote !== 45
+  ) {
+    throw new Error(
+      `TI-07.4 falhou: Resumo de conciliação inesperado: ${JSON.stringify(resultadoConc.resumo)}`,
+    )
+  }
+
+  // Testar exclusão pontual de linha no lote (linha_lote_3)
+  const concComExclusao = calcularConciliacaoSaldos({
+    linhasLote: linhasLoteConc,
+    idsLinhasExcluidas: new Set(['linha_lote_3']),
+    alunosExistentes: [alunoConcBanco1, alunoConcBanco2],
+    lancamentosExistentes: lancExistentesConc,
+    categoriasNde: categoriasMock,
+  })
+
+  const itemExcluido = concComExclusao.alunosConciliacao.find((a) => a.matricula === 'PSI_CONC_03')
+  if (!itemExcluido || itemExcluido.horasLote !== 0 || itemExcluido.saldoProjetado !== 0) {
+    throw new Error(
+      'TI-07.5 falhou: Exclusão de linha no lote não zerou as horas ativas do lote do aluno 3',
+    )
+  }
+
+  resultados.push(
+    'TI-07: Conciliação de saldos aluno por aluno (CONCILIADO, DIVERGENTE, SEM_REFERENCIA e exclusão do lote) passou.',
   )
 
   return { todosPassaram: true, resultados }
