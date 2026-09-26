@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { listarAlunos, criarAluno, atualizarAluno } from '@/services/alunos'
-import { listarCategorias } from '@/services/categorias'
+import { listarCategorias, criarCategoria, atualizarCategoria } from '@/services/categorias'
 import { listarTodosLancamentos, criarLancamento } from '@/services/lancamentos'
-import { getConfiguracaoGlobal } from '@/services/configuracao'
+import { getConfiguracaoGlobal, salvarConfiguracaoGlobal } from '@/services/configuracao'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '@/types'
 import {
   processarPlanilhaExcel,
@@ -16,6 +16,7 @@ import {
   ConciliacaoAluno,
   ResumoConciliacao,
   StatusConciliacao,
+  ConfiguracaoDetectadaPlanilha,
 } from '@/lib/importacaoPlanilha'
 import {
   FileSpreadsheet,
@@ -89,6 +90,13 @@ export default function Importacao() {
   const [linhasValidadas, setLinhasValidadas] = useState<LinhaImportacaoValidada[]>([])
   const [resumoValidacao, setResumoValidacao] = useState<ResumoValidacao | null>(null)
   const [nomeAba, setNomeAba] = useState<string>('')
+  const [saldosDeclaradosPainelTurma, setSaldosDeclaradosPainelTurma] = useState<
+    Map<string, number>
+  >(new Map())
+  const [configDetectada, setConfigDetectada] = useState<ConfiguracaoDetectadaPlanilha | null>(null)
+  const [aplicandoConfig, setAplicandoConfig] = useState(false)
+  const [dialogAplicarConfigAberto, setDialogAplicarConfigAberto] = useState(false)
+  const [configJaAplicada, setConfigJaAplicada] = useState(false)
   const [mapeamentoManualCategorias, setMapeamentoManualCategorias] = useState<
     Record<string, string>
   >({})
@@ -149,13 +157,14 @@ export default function Importacao() {
   const reprocessarArquivo = (
     buffer: ArrayBuffer,
     mapCategorias: Record<string, string> = mapeamentoManualCategorias,
+    categoriasParaValidar: Categoria[] = categoriasNde,
   ) => {
     try {
       setProcessandoArquivo(true)
       const resultado = processarPlanilhaExcel({
         arquivoBuffer: buffer,
         alunosExistentes,
-        categoriasNde,
+        categoriasNde: categoriasParaValidar,
         lancamentosExistentes,
         semestreAtualPadrao: configGlobal?.semestre_letivo_atual || '2026.2',
         mapeamentoManualCategorias: mapCategorias,
@@ -164,6 +173,8 @@ export default function Importacao() {
       setLinhasValidadas(resultado.linhas)
       setResumoValidacao(resultado.resumo)
       setNomeAba(resultado.nomeAbaUsada)
+      setSaldosDeclaradosPainelTurma(resultado.saldosDeclaradosPainelTurma)
+      setConfigDetectada(resultado.configDetectada)
       setEtapa(1)
       setIdsLinhasExcluidas(new Set())
       setResultadoEfetivacao(null)
@@ -210,8 +221,16 @@ export default function Importacao() {
       alunosExistentes,
       lancamentosExistentes,
       categoriasNde,
+      saldosDeclaradosPainelTurma,
     })
-  }, [linhasValidadas, idsLinhasExcluidas, alunosExistentes, lancamentosExistentes, categoriasNde])
+  }, [
+    linhasValidadas,
+    idsLinhasExcluidas,
+    alunosExistentes,
+    lancamentosExistentes,
+    categoriasNde,
+    saldosDeclaradosPainelTurma,
+  ])
 
   const handleArquivoSelecionado = (file: File) => {
     if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
@@ -231,7 +250,7 @@ export default function Importacao() {
       const buffer = e.target?.result as ArrayBuffer
       if (buffer) {
         setArquivoBuffer(buffer)
-        reprocessarArquivo(buffer)
+        reprocessarArquivo(buffer, mapeamentoManualCategorias, categoriasNde)
       }
     }
     reader.readAsArrayBuffer(file)
@@ -489,6 +508,92 @@ export default function Importacao() {
     })
   }
 
+  // Aplicar configurações detectadas da planilha na tabela NDE (Configuração Global + Categorias)
+  const handleAplicarConfigConfirmada = async () => {
+    if (!configDetectada) return
+    setDialogAplicarConfigAberto(false)
+    setAplicandoConfig(true)
+
+    try {
+      // 1. Atualizar parâmetros globais se detectados
+      if (
+        configDetectada.semestreLetivoAtual ||
+        configDetectada.minimoExigidoSemestre ||
+        configDetectada.metaCurso
+      ) {
+        const patchCfg: Partial<Omit<ConfiguracaoGlobal, 'id' | 'created' | 'updated'>> = {}
+        if (configDetectada.semestreLetivoAtual) {
+          patchCfg.semestre_letivo_atual = configDetectada.semestreLetivoAtual
+        }
+        if (configDetectada.minimoExigidoSemestre) {
+          patchCfg.minimo_exigido_semestre = configDetectada.minimoExigidoSemestre
+        }
+        if (configDetectada.metaCurso) {
+          patchCfg.meta_curso = configDetectada.metaCurso
+        }
+
+        const cfgAtualizada = await salvarConfiguracaoGlobal(configGlobal?.id || '', patchCfg)
+        setConfigGlobal(cfgAtualizada)
+      }
+
+      // 2. Sincronizar categorias NDE sem apagar existentes que tenham lançamentos
+      let categoriasCriadas = 0
+      let categoriasAtualizadas = 0
+
+      for (const catPlanilha of configDetectada.categorias) {
+        const existente = categoriasNde.find(
+          (c) => c.nome.trim().toLowerCase() === catPlanilha.nome.trim().toLowerCase(),
+        )
+
+        if (existente) {
+          // Atualiza regra e teto mantendo integridade
+          await atualizarCategoria(existente.id, {
+            regra_horas_unitaria: catPlanilha.regraHoras,
+            teto_maximo_curso: catPlanilha.tetoMaximo,
+            ativo: true,
+          })
+          categoriasAtualizadas++
+        } else {
+          // Cria nova categoria
+          await criarCategoria({
+            nome: catPlanilha.nome,
+            regra_horas_unitaria: catPlanilha.regraHoras,
+            teto_maximo_curso: catPlanilha.tetoMaximo,
+            ativo: true,
+          })
+          categoriasCriadas++
+        }
+      }
+
+      // Recarrega categorias do banco
+      const catsAtualizadas = await listarCategorias(false)
+      setCategoriasNde(catsAtualizadas)
+      setConfigJaAplicada(true)
+
+      // Reprocessa planilha com novas categorias
+      if (arquivoBuffer) {
+        reprocessarArquivo(arquivoBuffer, mapeamentoManualCategorias, catsAtualizadas)
+      }
+
+      toast({
+        title: 'Configurações do regulamento NDE aplicadas!',
+        description: `${categoriasCriadas} categorias criadas, ${categoriasAtualizadas} atualizadas com sucesso.`,
+      })
+    } catch (err: unknown) {
+      console.error('Erro ao aplicar configurações NDE da planilha:', err)
+      toast({
+        title: 'Erro ao aplicar configurações',
+        description:
+          err instanceof Error
+            ? err.message
+            : 'Falha ao sincronizar parâmetros ou categorias no banco.',
+        variant: 'destructive',
+      })
+    } finally {
+      setAplicandoConfig(false)
+    }
+  }
+
   const handleBaixarRelatorioAuditoria = () => {
     if (linhasValidadas.length === 0) return
     exportarRelatorioErrosExcel(linhasValidadas)
@@ -512,6 +617,9 @@ export default function Importacao() {
     setArquivoBuffer(null)
     setLinhasValidadas([])
     setResumoValidacao(null)
+    setSaldosDeclaradosPainelTurma(new Map())
+    setConfigDetectada(null)
+    setConfigJaAplicada(false)
     setIdsLinhasExcluidas(new Set())
     setEtapa(1)
     setResultadoEfetivacao(null)
@@ -654,8 +762,18 @@ export default function Importacao() {
                     {tamanhoArquivo}
                   </Badge>
                   <Badge variant="outline" className="text-[10px] text-blue-700 border-blue-200">
-                    Aba: {nomeAba}
+                    Aba de Lançamentos: {nomeAba}
                   </Badge>
+                  {resumoValidacao.origemSaldoDeclarado === 'aba_painel_turma' && (
+                    <Badge className="text-[10px] bg-blue-100 text-blue-800 border-blue-300">
+                      Saldo declarado: aba Painel por Turma
+                    </Badge>
+                  )}
+                  {resumoValidacao.origemSaldoDeclarado === 'aba_lancamentos' && (
+                    <Badge className="text-[10px] bg-slate-100 text-slate-700 border-slate-300">
+                      Saldo declarado: coluna na aba Lançamentos
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-slate-500">
                   Leitura concluída com sucesso. Validação linha a linha pronta para conferência.
@@ -742,6 +860,97 @@ export default function Importacao() {
               </div>
             </div>
           </div>
+
+          {/* BLOCO DE CONFIGURAÇÕES DETECTADAS NA PLANILHA (ABA CONFIG TABELA) */}
+          {configDetectada && (
+            <Card className="border-blue-200 bg-blue-50/50 shadow-xs">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="font-['Outfit'] text-sm font-bold text-[#0f2b48] flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-[#1d4ed8]" />
+                      Configurações e Regulação NDE detectadas na planilha
+                    </CardTitle>
+                    <CardDescription className="text-xs text-blue-900/80">
+                      A aba de configuração traz parâmetros semestrais e{' '}
+                      {configDetectada.categorias.length} categorias regulamentares.
+                    </CardDescription>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {configJaAplicada ? (
+                      <Badge className="bg-emerald-600 text-white text-xs px-2.5 py-1">
+                        <Check className="mr-1 h-3.5 w-3.5" />
+                        Configurações Aplicadas à Tabela NDE
+                      </Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => setDialogAplicarConfigAberto(true)}
+                        disabled={aplicandoConfig}
+                        className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-xs"
+                      >
+                        {aplicandoConfig ? (
+                          <>
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Aplicando...
+                          </>
+                        ) : (
+                          <>
+                            <Database className="mr-1.5 h-3.5 w-3.5" />
+                            Aplicar Configurações ao NDE
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                  <div className="bg-white rounded-lg p-2.5 border border-blue-100 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-500">
+                      Semestre Letivo Atual
+                    </span>
+                    <div className="text-sm font-bold text-[#0f2b48]">
+                      {configDetectada.semestreLetivoAtual || 'Não informado'}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2.5 border border-blue-100 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-500">
+                      Mínimo Exigido por Semestre
+                    </span>
+                    <div className="text-sm font-bold text-[#0f2b48]">
+                      {configDetectada.minimoExigidoSemestre
+                        ? `${configDetectada.minimoExigidoSemestre}h`
+                        : 'Não informado'}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2.5 border border-blue-100 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-500">
+                      Meta do Curso
+                    </span>
+                    <div className="text-sm font-bold text-[#0f2b48]">
+                      {configDetectada.metaCurso
+                        ? `${configDetectada.metaCurso}h`
+                        : 'Não informada'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-600">
+                  <span className="font-semibold text-slate-700">Categorias regulamentares:</span>{' '}
+                  {configDetectada.categorias.map((c, i) => (
+                    <span key={i} className="inline-block mr-2 mb-1">
+                      <Badge variant="outline" className="text-[10px] bg-white border-blue-200">
+                        {c.nome} (teto {c.tetoMaximo}h)
+                      </Badge>
+                    </span>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* CARDS COM RESUMO DOS NÚMEROS */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
@@ -1253,12 +1462,24 @@ export default function Importacao() {
 
                                   <td className="py-2.5 px-3 text-right font-mono">
                                     {aluno.saldoDeclarado !== undefined ? (
-                                      <span className="font-bold text-slate-800">
-                                        {aluno.saldoDeclarado}h
-                                      </span>
+                                      <div>
+                                        <span className="font-bold text-slate-800">
+                                          {aluno.saldoDeclarado}h
+                                        </span>
+                                        {aluno.origemSaldoDeclarado === 'aba_painel_turma' && (
+                                          <span className="block text-[9px] font-sans text-blue-600">
+                                            Painel por Turma
+                                          </span>
+                                        )}
+                                        {aluno.origemSaldoDeclarado === 'aba_lancamentos' && (
+                                          <span className="block text-[9px] font-sans text-slate-400">
+                                            Aba Lançamentos
+                                          </span>
+                                        )}
+                                      </div>
                                     ) : (
                                       <span className="text-slate-400 text-[11px]">
-                                        Não declarado
+                                        Sem referência
                                       </span>
                                     )}
                                   </td>
@@ -1827,6 +2048,127 @@ export default function Importacao() {
           )}
         </div>
       )}
+
+      {/* MODAL DE CONFIRMAÇÃO PARA APLICAR CONFIGURAÇÕES NDE DETECTADAS */}
+      <Dialog open={dialogAplicarConfigAberto} onOpenChange={setDialogAplicarConfigAberto}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48] flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-[#1d4ed8]" />
+              Confirmar Aplicação das Configurações NDE
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Revise os parâmetros e categorias que serão sincronizados no banco de dados. Nenhuma
+              categoria existente com lançamentos será excluída.
+            </DialogDescription>
+          </DialogHeader>
+
+          {configDetectada && (
+            <div className="space-y-4 py-3 text-xs">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <h4 className="font-bold text-[#0f2b48] uppercase tracking-wider text-[11px]">
+                  Parâmetros Gerais do Curso
+                </h4>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Semestre Letivo:</span>
+                  <span className="font-bold text-slate-900">
+                    {configDetectada.semestreLetivoAtual || 'Manter atual'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Mínimo Exigido Semestral:</span>
+                  <span className="font-bold text-slate-900">
+                    {configDetectada.minimoExigidoSemestre
+                      ? `${configDetectada.minimoExigidoSemestre}h`
+                      : 'Manter atual'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Meta do Curso:</span>
+                  <span className="font-bold text-slate-900">
+                    {configDetectada.metaCurso ? `${configDetectada.metaCurso}h` : 'Manter atual'}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-[#0f2b48] uppercase tracking-wider text-[11px] mb-2">
+                  Categorias Regulamentares ({configDetectada.categorias.length})
+                </h4>
+                <div className="max-h-60 overflow-y-auto space-y-1.5 border border-slate-200 rounded-lg p-2 bg-white">
+                  {configDetectada.categorias.map((cat, idx) => {
+                    const jaExiste = categoriasNde.some(
+                      (c) => c.nome.trim().toLowerCase() === cat.nome.trim().toLowerCase(),
+                    )
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-2 rounded-md bg-slate-50 border border-slate-100"
+                      >
+                        <div className="flex-1 pr-2">
+                          <span className="font-medium text-slate-800">{cat.nome}</span>
+                          <span className="block text-[10px] text-slate-500">{cat.regraHoras}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="font-mono text-[10px]">
+                            Teto: {cat.tetoMaximo}h
+                          </Badge>
+                          {jaExiste ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] text-blue-700 border-blue-300"
+                            >
+                              Atualizar
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] text-emerald-700 border-emerald-300"
+                            >
+                              Nova
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDialogAplicarConfigAberto(false)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleAplicarConfigConfirmada}
+              disabled={aplicandoConfig}
+              className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold"
+            >
+              {aplicandoConfig ? (
+                <>
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Aplicando...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-1.5 h-3.5 w-3.5" />
+                  Confirmar e Sincronizar NDE
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL DE CONFIRMAÇÃO EXPLÍCITA ANTES DA EFETIVAÇÃO DEFINITIVA */}
       <Dialog open={dialogConfirmacaoAberto} onOpenChange={setDialogConfirmacaoAberto}>

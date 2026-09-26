@@ -8,6 +8,8 @@ import {
   normalizarSemestreLetivo,
   processarPlanilhaExcel,
   calcularConciliacaoSaldos,
+  extrairLinhasComCabecalhoInteligente,
+  extrairConfigTabelaWorksheet,
 } from './importacaoPlanilha'
 import type { Aluno, Categoria, Lancamento } from '@/types'
 
@@ -553,6 +555,215 @@ export function executarTestesImportacao(): { todosPassaram: boolean; resultados
 
   resultados.push(
     'TI-07: Conciliação de saldos aluno por aluno (CONCILIADO, DIVERGENTE, SEM_REFERENCIA e exclusão do lote) passou.',
+  )
+
+  // ==========================================
+  // TI-08: DETECÇÃO DE CABEÇALHOS NA 2ª LINHA (BANNERS)
+  // ==========================================
+  const wsComBanner = XLSX.utils.aoa_to_sheet([
+    ['BANNER DE INSTRUÇÃO INSTITUCIONAL — NÃO EDITAR', '', '', ''],
+    ['Nome', 'Matrícula', 'Turno', 'Semestre atual'],
+    ['Estudante Teste 1', 'MAT_TESTE_1', 'Noturno', '3º'],
+    ['Estudante Teste 2', 'MAT_TESTE_2', 'Matutino', '1º'],
+  ])
+
+  const extraidoBanner = extrairLinhasComCabecalhoInteligente(wsComBanner, [
+    'nome',
+    'matricula',
+    'turno',
+    'semestreatual',
+  ])
+
+  if (extraidoBanner.linhaCabecalhoIdx !== 1) {
+    throw new Error(
+      `TI-08.1 falhou: Esperado cabeçalho na linha de índice 1 (2ª linha), mas obteve índice ${extraidoBanner.linhaCabecalhoIdx}`,
+    )
+  }
+  if (extraidoBanner.linhas.length !== 2) {
+    throw new Error(
+      `TI-08.2 falhou: Esperado 2 linhas de dados após o cabeçalho, mas obteve ${extraidoBanner.linhas.length}`,
+    )
+  }
+  resultados.push('TI-08: Detecção inteligente de cabeçalhos na 2ª linha (banners) passou.')
+
+  // ==========================================
+  // TI-09: DATAS MISTAS (dd/mm/yyyy E ISO TIMESTAMP) E SEMESTRE ORDINAL ("1º", "3º")
+  // ==========================================
+  const wbMultiAbaTeste = XLSX.utils.book_new()
+
+  // Aba Config Tabela
+  const wsConfigMock = XLSX.utils.aoa_to_sheet([
+    ['CONFIGURAÇÃO — Tabela de Horas Complementares', '', ''],
+    ['Parâmetros:', '', ''],
+    ['Semestre letivo atual:', '2026.2', ''],
+    ['Mínimo exigido por semestre:', 20, ''],
+    ['Meta do curso:', 200, ''],
+    ['Categoria', 'Horas por atividade', 'Máximo do curso'],
+    ['Eventos científicos com apresentação de trabalho', '20h por evento', 40],
+    ['Artes e Cultura', '10h por evento', 150],
+    ['Nota: edite apenas as células de parâmetro', '', ''],
+  ])
+  XLSX.utils.book_append_sheet(wbMultiAbaTeste, wsConfigMock, 'Config Tabela 2026.2')
+
+  // Aba Alunos (com semestre ordinal "1º" e "3º")
+  const wsAlunosMock = XLSX.utils.aoa_to_sheet([
+    ['CADASTRO DE ALUNOS — BANNER CABEÇALHO', '', '', '', '', ''],
+    ['Nome', 'Matrícula', 'Turno', 'Semestre atual', 'Entrada', 'E-mail'],
+    ['Aluno Alpha Teste', 'MAT_ALPHA', 'Noturno', '1º', '2026.2', 'alpha@teste.edu.br'],
+    ['Aluno Beta Teste', 'MAT_BETA', 'Matutino', '3º', '2025.1', 'beta@teste.edu.br'],
+  ])
+  XLSX.utils.book_append_sheet(wbMultiAbaTeste, wsAlunosMock, 'Alunos')
+
+  // Aba Lançamentos (com datas mistas: dd/mm/yyyy e ISO string)
+  const wsLancamentosMock = XLSX.utils.aoa_to_sheet([
+    ['LANÇAMENTOS DE HORAS — BANNER LINHA 1', '', '', '', '', '', '', '', ''],
+    [
+      'Data',
+      'Matrícula',
+      'Nome do aluno',
+      'Semestre letivo da atividade',
+      'Categoria',
+      'Horas aceitas',
+      'Comprovante OK? (SIM/NÃO)',
+      'Relatório OK? (SIM/NÃO)',
+      'Observação',
+    ],
+    // Data formato BR dd/mm/yyyy
+    [
+      '15/03/2025',
+      'MAT_ALPHA',
+      'Aluno Alpha Teste',
+      '2025.1',
+      'Eventos científicos com apresentação de trabalho',
+      20,
+      'SIM',
+      'SIM',
+      'Participação em congresso',
+    ],
+    // Data formato ISO datetime com fuso
+    [
+      '2026-10-04T03:06:28.000Z',
+      'MAT_BETA',
+      'Aluno Beta Teste',
+      '2026.1',
+      'Artes e Cultura',
+      10,
+      'SIM',
+      'SIM',
+      'Atividade cultural e museu',
+    ],
+  ])
+  XLSX.utils.book_append_sheet(wbMultiAbaTeste, wsLancamentosMock, 'Lançamentos')
+
+  // Aba Painel por Turma (para conciliação com Total geral acumulado)
+  const wsTurmaMock = XLSX.utils.aoa_to_sheet([
+    ['PAINEL POR TURMA — BANNER', '', '', '', '', '', '', '', ''],
+    [
+      'Nome',
+      'Turno',
+      'Semestre atual',
+      'Entrada',
+      'Total geral acumulado',
+      'Horas do semestre atual',
+      'Restante semestre atual',
+      'Restante até o fim do curso',
+      'Balanço semestral',
+    ],
+    ['Aluno Alpha Teste', 'Noturno', 1, '2026.2', 20, 20, 0, 180, 'CUMPRIU'],
+    ['Aluno Beta Teste', 'Matutino', 3, '2025.1', 15, 10, 10, 185, 'DIVERGENTE_PROPOSITAL'],
+  ])
+  XLSX.utils.book_append_sheet(wbMultiAbaTeste, wsTurmaMock, 'Painel por Turma')
+
+  const bufferTeste = XLSX.write(wbMultiAbaTeste, { type: 'array', bookType: 'xlsx' })
+
+  const resultadoParserMultiAba = processarPlanilhaExcel({
+    arquivoBuffer: bufferTeste,
+    alunosExistentes: [],
+    categoriasNde: categoriasMock,
+    lancamentosExistentes: [],
+    semestreAtualPadrao: '2026.2',
+  })
+
+  if (resultadoParserMultiAba.linhas.length !== 2) {
+    throw new Error(
+      `TI-09.1 falhou: Esperado 2 linhas de lançamentos, obteve ${resultadoParserMultiAba.linhas.length}`,
+    )
+  }
+
+  const l1 = resultadoParserMultiAba.linhas.find((l) => l.matricula === 'MAT_ALPHA')
+  const l2 = resultadoParserMultiAba.linhas.find((l) => l.matricula === 'MAT_BETA')
+
+  if (!l1 || l1.dataLancamento !== '2025-03-15') {
+    throw new Error(
+      `TI-09.2 falhou: Esperado normalização de data dd/mm/yyyy para 2025-03-15, obteve ${l1?.dataLancamento}`,
+    )
+  }
+  if (!l2 || l2.dataLancamento !== '2026-10-04') {
+    throw new Error(
+      `TI-09.3 falhou: Esperado normalização de data ISO para 2026-10-04, obteve ${l2?.dataLancamento}`,
+    )
+  }
+  if (l1.semestreAtual !== 1 || l2.semestreAtual !== 3) {
+    throw new Error(
+      `TI-09.4 falhou: Semestres ordinais ("1º", "3º") não mapeados corretamente: l1=${l1.semestreAtual}, l2=${l2.semestreAtual}`,
+    )
+  }
+
+  resultados.push(
+    'TI-09: Normalização de datas mistas (dd/mm/yyyy e ISO) e semestres ordinais passou.',
+  )
+
+  // ==========================================
+  // TI-10: CONCILIAÇÃO VIA ABA "Painel por Turma" E EXTRAÇÃO DE CONFIG
+  // ==========================================
+  if (!resultadoParserMultiAba.configDetectada) {
+    throw new Error('TI-10.1 falhou: Configuração da aba Config Tabela não foi detectada.')
+  }
+  if (
+    resultadoParserMultiAba.configDetectada.semestreLetivoAtual !== '2026.2' ||
+    resultadoParserMultiAba.configDetectada.minimoExigidoSemestre !== 20 ||
+    resultadoParserMultiAba.configDetectada.metaCurso !== 200 ||
+    resultadoParserMultiAba.configDetectada.categorias.length !== 2
+  ) {
+    throw new Error(
+      `TI-10.2 falhou: Parâmetros detectados inválidos: ${JSON.stringify(resultadoParserMultiAba.configDetectada)}`,
+    )
+  }
+
+  // Conciliação de saldos usando o mapa do Painel por Turma
+  const concPainel = calcularConciliacaoSaldos({
+    linhasLote: resultadoParserMultiAba.linhas,
+    alunosExistentes: [],
+    lancamentosExistentes: [],
+    categoriasNde: categoriasMock,
+    saldosDeclaradosPainelTurma: resultadoParserMultiAba.saldosDeclaradosPainelTurma,
+  })
+
+  const concAlpha = concPainel.alunosConciliacao.find((a) => a.matricula === 'MAT_ALPHA')
+  const concBeta = concPainel.alunosConciliacao.find((a) => a.matricula === 'MAT_BETA')
+
+  if (
+    !concAlpha ||
+    concAlpha.statusConciliacao !== 'CONCILIADO' ||
+    concAlpha.saldoDeclarado !== 20
+  ) {
+    throw new Error(
+      `TI-10.3 falhou: Esperado CONCILIADO com saldo 20 para MAT_ALPHA via Painel por Turma, obteve status ${concAlpha?.statusConciliacao} saldo ${concAlpha?.saldoDeclarado}`,
+    )
+  }
+  if (!concBeta || concBeta.statusConciliacao !== 'DIVERGENTE' || concBeta.diferenca !== -5) {
+    throw new Error(
+      `TI-10.4 falhou: Esperado DIVERGENTE com diferença -5 para MAT_BETA via Painel por Turma, obteve status ${concBeta?.statusConciliacao} dif ${concBeta?.diferenca}`,
+    )
+  }
+  if (concAlpha.origemSaldoDeclarado !== 'aba_painel_turma') {
+    throw new Error(
+      `TI-10.5 falhou: Origem do saldo declarado deveria ser 'aba_painel_turma', obteve ${concAlpha.origemSaldoDeclarado}`,
+    )
+  }
+
+  resultados.push(
+    'TI-10: Conciliação via aba Painel por Turma e detecção de configurações da aba Config Tabela passaram.',
   )
 
   return { todosPassaram: true, resultados }

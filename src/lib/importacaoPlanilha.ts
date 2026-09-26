@@ -43,6 +43,17 @@ export interface LinhaImportacaoValidada {
   saldosPorCategoriaDeclarados?: Record<string, number>
 }
 
+export interface ConfiguracaoDetectadaPlanilha {
+  semestreLetivoAtual?: string
+  minimoExigidoSemestre?: number
+  metaCurso?: number
+  categorias: Array<{
+    nome: string
+    regraHoras: string
+    tetoMaximo: number
+  }>
+}
+
 export interface ResumoValidacao {
   totalLinhasLidas: number
   linhasValidas: number
@@ -56,6 +67,8 @@ export interface ResumoValidacao {
   lancamentosDuplicadosIgnorados: number
   categoriasNaoEncontradas: { [categoriaTexto: string]: number }
   linhasComSemestreFallback: number
+  configDetectada?: ConfiguracaoDetectadaPlanilha
+  origemSaldoDeclarado?: 'aba_lancamentos' | 'aba_painel_turma' | 'nenhuma'
 }
 
 export type StatusConciliacao = 'CONCILIADO' | 'DIVERGENTE' | 'SEM_REFERENCIA'
@@ -83,6 +96,7 @@ export interface ConciliacaoAluno {
   saldoBancoAtual: number
   saldoProjetado: number
   saldoDeclarado?: number // undefined se a planilha não trouxer total
+  origemSaldoDeclarado?: 'aba_lancamentos' | 'aba_painel_turma' | 'nenhuma'
   diferenca?: number // saldoProjetado - saldoDeclarado
   statusConciliacao: StatusConciliacao
   // Detalhamento por categoria
@@ -196,6 +210,7 @@ export function identificarColunas(colunasReais: string[]): Record<string, strin
       limpo === 'semestreletivoatividade' ||
       limpo === 'semestreatividade' ||
       limpo === 'semestreletivo' ||
+      limpo === 'semestreletivodaatividade' ||
       limpo === 'anoperiodo' ||
       limpo === 'periodoletivo' ||
       limpo === 'semestredocertificado' ||
@@ -207,6 +222,7 @@ export function identificarColunas(colunasReais: string[]): Record<string, strin
     const isSaldoDeclarado =
       limpo === 'total' ||
       limpo === 'totalgeral' ||
+      limpo === 'totalgeralacumulado' ||
       limpo === 'horastotais' ||
       limpo === 'saldototal' ||
       limpo === 'totalhoras' ||
@@ -287,6 +303,10 @@ export function identificarColunas(colunasReais: string[]): Record<string, strin
       limpo === 'dataatividade'
     ) {
       if (!mapa['data']) mapa['data'] = col
+    } else if (limpo.includes('comprovante') || limpo.includes('comprovanteok')) {
+      if (!mapa['comprovante']) mapa['comprovante'] = col
+    } else if (limpo.includes('relatorio') || limpo.includes('relatoriook')) {
+      if (!mapa['relatorio']) mapa['relatorio'] = col
     } else if (limpo === 'semestre' || limpo === 'periodo' || limpo === 'anoperiodo') {
       // Se não foi pego como semestreAtividade e nem semestreAtual
       if (!mapa['semestreAtividade']) {
@@ -310,6 +330,209 @@ export function identificarColunas(colunasReais: string[]): Record<string, strin
   })
 
   return mapa
+}
+
+/**
+ * Detecta e extrai parâmetros e categorias da aba "Config Tabela" (ex: "Config Tabela 2026.2")
+ */
+export function extrairConfigTabelaWorksheet(
+  worksheet: XLSX.WorkSheet,
+): ConfiguracaoDetectadaPlanilha | null {
+  const matriz = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    header: 1,
+    defval: '',
+    blankrows: false,
+  })
+
+  if (!matriz || matriz.length === 0) return null
+
+  let semestreLetivoAtual: string | undefined
+  let minimoExigidoSemestre: number | undefined
+  let metaCurso: number | undefined
+  const categorias: Array<{
+    nome: string
+    regraHoras: string
+    tetoMaximo: number
+  }> = []
+
+  let lendoTabelaCategorias = false
+
+  for (const linha of matriz) {
+    if (!Array.isArray(linha)) continue
+    const colA = String(linha[0] ?? '').trim()
+    const colB = linha[1]
+    const colC = linha[2]
+    const normA = normalizarChave(colA)
+
+    if (normA.includes('semestreletivoatual')) {
+      const sem = normalizarSemestreLetivo(colB)
+      if (sem) semestreLetivoAtual = sem
+      continue
+    }
+
+    if (normA.includes('minimoexigidoporsemestre') || normA.includes('minimoexigido')) {
+      const minNum = converterParaNumero(colB)
+      if (minNum > 0) minimoExigidoSemestre = minNum
+      continue
+    }
+
+    if (normA.includes('metadocurso') || normA.includes('metacurso')) {
+      const metaNum = converterParaNumero(colB)
+      if (metaNum > 0) metaCurso = metaNum
+      continue
+    }
+
+    // Identificar cabeçalho da tabela de categorias: "Categoria" | "Horas por atividade" | "Máximo do curso"
+    if (
+      (normA === 'categoria' || normA.startsWith('categoria')) &&
+      (normalizarChave(String(colB)).includes('horas') ||
+        normalizarChave(String(colC)).includes('maximo'))
+    ) {
+      lendoTabelaCategorias = true
+      continue
+    }
+
+    if (lendoTabelaCategorias) {
+      if (normA.startsWith('nota') || normA.includes('editeapenas') || !colA) {
+        // Encerrou tabela de categorias
+        lendoTabelaCategorias = false
+        continue
+      }
+
+      // Linha de categoria
+      const nomeCat = colA
+      const regraHoras = String(colB ?? '').trim()
+      const tetoNum = converterParaNumero(colC)
+
+      if (nomeCat && tetoNum > 0) {
+        categorias.push({
+          nome: nomeCat,
+          regraHoras: regraHoras || `${tetoNum}h no curso`,
+          tetoMaximo: tetoNum,
+        })
+      }
+    }
+  }
+
+  if (!semestreLetivoAtual && !minimoExigidoSemestre && !metaCurso && categorias.length === 0) {
+    return null
+  }
+
+  return {
+    semestreLetivoAtual,
+    minimoExigidoSemestre,
+    metaCurso,
+    categorias,
+  }
+}
+
+/**
+ * Converte uma folha de cálculo (Worksheet) em lista de objetos tolerando banners
+ * na linha 1 (ou primeiras linhas) e detectando automaticamente onde está a linha de cabeçalho.
+ */
+export function extrairLinhasComCabecalhoInteligente(
+  worksheet: XLSX.WorkSheet,
+  colunasEsperadas: string[],
+): {
+  linhas: LinhaPlanilhaBruta[]
+  linhaCabecalhoIdx: number // 0-based
+  cabecalhos: string[]
+} {
+  const matriz = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    header: 1,
+    defval: '',
+    blankrows: false,
+  })
+
+  if (!matriz || matriz.length === 0) {
+    return { linhas: [], linhaCabecalhoIdx: -1, cabecalhos: [] }
+  }
+
+  const setEsperados = new Set(colunasEsperadas.map((c) => normalizarChave(c)))
+
+  // Percorre as primeiras linhas (até 15) buscando a linha com mais correspondências de cabeçalho
+  let melhorLinhaIdx = 0
+  let maxMatches = 0
+
+  const limiteBusca = Math.min(15, matriz.length)
+  for (let i = 0; i < limiteBusca; i++) {
+    const linha = matriz[i]
+    if (!Array.isArray(linha)) continue
+
+    let matches = 0
+    linha.forEach((celula) => {
+      if (!celula) return
+      const limpo = normalizarChave(String(celula))
+      if (!limpo) return
+
+      if (setEsperados.has(limpo)) {
+        matches++
+        return
+      }
+      // Checagem parcial para cabeçalhos compostos (ex: "comprovanteoksimnao" contendo "comprovante")
+      for (const esp of setEsperados) {
+        if (limpo.includes(esp) || esp.includes(limpo)) {
+          matches++
+          break
+        }
+      }
+    })
+
+    if (matches > maxMatches) {
+      maxMatches = matches
+      melhorLinhaIdx = i
+    }
+  }
+
+  // Se não encontrou nenhuma correspondência específica, usa a linha 0
+  if (maxMatches === 0) {
+    melhorLinhaIdx = 0
+  }
+
+  const linhaCabecalho = (matriz[melhorLinhaIdx] || []) as unknown[]
+  const cabecalhos: string[] = []
+  const contadores: Record<string, number> = {}
+
+  linhaCabecalho.forEach((col, idx) => {
+    let colNome = String(col ?? '').trim()
+    if (!colNome) {
+      colNome = `coluna_${idx + 1}`
+    }
+    if (contadores[colNome] !== undefined) {
+      contadores[colNome]++
+      colNome = `${colNome}_${contadores[colNome]}`
+    } else {
+      contadores[colNome] = 0
+    }
+    cabecalhos.push(colNome)
+  })
+
+  const linhas: LinhaPlanilhaBruta[] = []
+  for (let i = melhorLinhaIdx + 1; i < matriz.length; i++) {
+    const linhaDados = matriz[i] as unknown[]
+    if (!Array.isArray(linhaDados)) continue
+
+    const obj: LinhaPlanilhaBruta = {}
+    let temConteudo = false
+
+    cabecalhos.forEach((cab, idx) => {
+      const val = linhaDados[idx] ?? ''
+      obj[cab] = val
+      if (val !== '' && val !== null && val !== undefined) {
+        temConteudo = true
+      }
+    })
+
+    if (temConteudo) {
+      linhas.push(obj)
+    }
+  }
+
+  return {
+    linhas,
+    linhaCabecalhoIdx: melhorLinhaIdx,
+    cabecalhos,
+  }
 }
 
 /**
@@ -383,6 +606,7 @@ export function calcularConciliacaoSaldos(params: {
   alunosExistentes: Aluno[]
   lancamentosExistentes: Lancamento[]
   categoriasNde: Categoria[]
+  saldosDeclaradosPainelTurma?: Map<string, number>
 }): {
   alunosConciliacao: ConciliacaoAluno[]
   resumo: ResumoConciliacao
@@ -393,6 +617,7 @@ export function calcularConciliacaoSaldos(params: {
     alunosExistentes,
     lancamentosExistentes,
     categoriasNde,
+    saldosDeclaradosPainelTurma = new Map<string, number>(),
   } = params
 
   // Mapeamentos de suporte
@@ -461,13 +686,22 @@ export function calcularConciliacaoSaldos(params: {
     const saldoProjetado = saldoBancoAtual + horasLoteAluno
 
     // Verifica se a planilha trouxe saldo declarado para este aluno
-    // Pode vir na coluna de total (saldoDeclaradoLinha)
+    // Pode vir na coluna de total (saldoDeclaradoLinha) da aba Lançamentos
+    // ou pela aba Painel por Turma (casando por matrícula)
     let saldoDeclarado: number | undefined = undefined
+    let origemSaldoDeclarado: 'aba_lancamentos' | 'aba_painel_turma' | 'nenhuma' = 'nenhuma'
+
     for (const l of linhasDoAluno) {
       if (l.saldoDeclaradoLinha !== undefined && !isNaN(l.saldoDeclaradoLinha)) {
         saldoDeclarado = l.saldoDeclaradoLinha
+        origemSaldoDeclarado = 'aba_lancamentos'
         break
       }
+    }
+
+    if (saldoDeclarado === undefined && saldosDeclaradosPainelTurma.has(matricula)) {
+      saldoDeclarado = saldosDeclaradosPainelTurma.get(matricula)
+      origemSaldoDeclarado = 'aba_painel_turma'
     }
 
     // Status de conciliação
@@ -541,6 +775,7 @@ export function calcularConciliacaoSaldos(params: {
       saldoBancoAtual,
       saldoProjetado,
       saldoDeclarado,
+      origemSaldoDeclarado,
       diferenca,
       statusConciliacao,
       categorias: categoriasDetalhadas,
@@ -608,13 +843,19 @@ export function converterDataParaIso(valor: unknown): string {
     return `${ano}-${mes}-${dia}`
   }
 
-  // Formato ISO YYYY-MM-DD
+  // Formato ISO YYYY-MM-DD ou ISO datetime com timestamp/fuso (ex: 2026-10-04T03:06:28.000Z)
   const isoMatch = str.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/)
   if (isoMatch) {
     const ano = isoMatch[1]
     const mes = isoMatch[2].padStart(2, '0')
     const dia = isoMatch[3].padStart(2, '0')
     return `${ano}-${mes}-${dia}`
+  }
+
+  // Tentar Date.parse para outros formatos de string válidos
+  const parsedDate = new Date(str)
+  if (!isNaN(parsedDate.getTime())) {
+    return parsedDate.toISOString().split('T')[0]
   }
 
   return new Date().toISOString().split('T')[0]
@@ -649,6 +890,8 @@ export function processarPlanilhaExcel(params: {
   resumo: ResumoValidacao
   nomeAbaUsada: string
   colunasIdentificadas: Record<string, string>
+  saldosDeclaradosPainelTurma: Map<string, number>
+  configDetectada: ConfiguracaoDetectadaPlanilha | null
 } {
   const {
     arquivoBuffer,
@@ -660,21 +903,189 @@ export function processarPlanilhaExcel(params: {
   } = params
 
   const workbook = XLSX.read(arquivoBuffer, { type: 'array', cellDates: true })
-  const primeiraAba = workbook.SheetNames[0]
-  if (!primeiraAba) {
+  if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
     throw new Error('A planilha está vazia ou não contém abas válidas.')
   }
 
-  const worksheet = workbook.Sheets[primeiraAba]
-  const linhasBrutas = XLSX.utils.sheet_to_json<LinhaPlanilhaBruta>(worksheet, {
-    defval: '',
+  // 1. Identificar abas no workbook multi-aba
+  let abaLancamentosNome = workbook.SheetNames.find((nome) => {
+    const n = normalizarChave(nome)
+    return n.includes('lancamento') || n.includes('atividade')
   })
 
-  if (!linhasBrutas || linhasBrutas.length === 0) {
-    throw new Error('Nenhuma linha de dados encontrada na primeira aba da planilha.')
+  let abaAlunosNome = workbook.SheetNames.find((nome) => {
+    const n = normalizarChave(nome)
+    return n.includes('aluno') && !n.includes('painel')
+  })
+
+  let abaPainelTurmaNome = workbook.SheetNames.find((nome) => {
+    const n = normalizarChave(nome)
+    return n.includes('painelporturma') || (n.includes('turma') && n.includes('painel'))
+  })
+
+  const abaConfigNome = workbook.SheetNames.find((nome) => {
+    const n = normalizarChave(nome)
+    return n.includes('config') || n.includes('tabela')
+  })
+
+  // Se não encontrou abas nomeadas "Lançamentos", verificar a primeira aba
+  if (!abaLancamentosNome) {
+    abaLancamentosNome = workbook.SheetNames[0]
   }
 
-  const colunasReais = Object.keys(linhasBrutas[0] || {})
+  // Extrair configurações detectadas da aba Config Tabela (se existir)
+  let configDetectada: ConfiguracaoDetectadaPlanilha | null = null
+  if (abaConfigNome && workbook.Sheets[abaConfigNome]) {
+    configDetectada = extrairConfigTabelaWorksheet(workbook.Sheets[abaConfigNome])
+  }
+
+  // 2. Extrair mapa de alunos da aba "Alunos" (se existir)
+  // Cabeçalhos esperados: Nome, Matrícula, Turno, Semestre atual, Entrada, E-mail
+  interface DadosCadastroAlunoPlanilha {
+    nome: string
+    matricula: string
+    turno: 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial'
+    semestreAtual: number
+    periodoEntrada: string
+    email: string
+  }
+  const cadastroAlunosMap = new Map<string, DadosCadastroAlunoPlanilha>()
+
+  if (abaAlunosNome && workbook.Sheets[abaAlunosNome]) {
+    const extraidoAlunos = extrairLinhasComCabecalhoInteligente(workbook.Sheets[abaAlunosNome], [
+      'nome',
+      'matricula',
+      'turno',
+      'semestreatual',
+      'entrada',
+      'email',
+    ])
+    const mapaColAlunos = identificarColunas(extraidoAlunos.cabecalhos)
+
+    extraidoAlunos.linhas.forEach((r) => {
+      const matRaw = String(r[mapaColAlunos['matricula'] || 'matricula'] ?? '')
+        .trim()
+        .toUpperCase()
+      const nomeRaw = String(r[mapaColAlunos['nome'] || 'nome'] ?? '').trim()
+      if (!matRaw && !nomeRaw) return
+
+      const turnoRaw = String(r[mapaColAlunos['turno'] || 'turno'] ?? '')
+      let turno: 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial' = 'Matutino'
+      const turnoStr = normalizarChave(turnoRaw)
+      if (turnoStr.includes('especial') || turnoStr === 'esp' || turnoStr === 'e') {
+        turno = 'Especial'
+      } else if (turnoStr.includes('vesp') || turnoStr.includes('tarde') || turnoStr === 'v') {
+        turno = 'Vespertino'
+      } else if (turnoStr.includes('not') || turnoStr.includes('noite') || turnoStr === 'n') {
+        turno = 'Noturno'
+      } else if (turnoStr.includes('mat') || turnoStr.includes('manha') || turnoStr === 'm') {
+        turno = 'Matutino'
+      }
+
+      // Semestre atual (ordinal "1º", "3º" etc.)
+      const semRaw = String(r[mapaColAlunos['semestreAtual'] || 'semestre'] ?? '').trim()
+      let semestreAtual = 1
+      const ordMatch = semRaw.match(/^(\d{1,2})(?:º|ª|o|a)?$/i)
+      if (ordMatch) {
+        const parsed = parseInt(ordMatch[1], 10)
+        if (parsed >= 1 && parsed <= 10) semestreAtual = parsed
+      } else {
+        const parsed = parseInt(semRaw.replace(/\D/g, ''), 10)
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 10) semestreAtual = parsed
+      }
+
+      const periodoEntrada = String(r[mapaColAlunos['periodoEntrada'] || 'entrada'] ?? '').trim()
+      const emailRaw = String(r[mapaColAlunos['email'] || 'email'] ?? '').trim()
+
+      cadastroAlunosMap.set(matRaw, {
+        nome: nomeRaw,
+        matricula: matRaw,
+        turno,
+        semestreAtual,
+        periodoEntrada,
+        email: emailRaw,
+      })
+    })
+  }
+
+  // 3. Extrair mapa de saldos da aba "Painel por Turma" (se existir)
+  // Cabeçalhos esperados: Nome | Turno | Semestre atual | Entrada | Total geral acumulado | Horas do semestre atual | ...
+  const saldosDeclaradosPainelTurma = new Map<string, number>()
+  if (abaPainelTurmaNome && workbook.Sheets[abaPainelTurmaNome]) {
+    const extraidoTurma = extrairLinhasComCabecalhoInteligente(
+      workbook.Sheets[abaPainelTurmaNome],
+      [
+        'nome',
+        'matricula',
+        'turno',
+        'semestreatual',
+        'entrada',
+        'totalgeralacumulado',
+        'totalgeral',
+        'total',
+      ],
+    )
+    const mapaColTurma = identificarColunas(extraidoTurma.cabecalhos)
+    const colTotalTurma =
+      mapaColTurma['saldoDeclarado'] ||
+      extraidoTurma.cabecalhos.find((c) => normalizarChave(c).includes('totalgeral')) ||
+      extraidoTurma.cabecalhos.find((c) => normalizarChave(c).includes('acumulado'))
+
+    // Mapeamento auxiliar de Aluno por Nome caso a aba Painel por Turma não tenha coluna Matrícula explícita
+    const alunoPorNomeMap = new Map<string, string>() // nomeNorm -> matricula
+    cadastroAlunosMap.forEach((dados, mat) => {
+      alunoPorNomeMap.set(normalizarChave(dados.nome), mat)
+    })
+    alunosExistentes.forEach((a) => {
+      alunoPorNomeMap.set(normalizarChave(a.nome), a.matricula.trim().toUpperCase())
+    })
+
+    extraidoTurma.linhas.forEach((r) => {
+      const matRaw = String(r[mapaColTurma['matricula'] || 'matricula'] ?? '')
+        .trim()
+        .toUpperCase()
+      const nomeRaw = String(r[mapaColTurma['nome'] || 'nome'] ?? '').trim()
+      const totalRaw = colTotalTurma ? r[colTotalTurma] : undefined
+      const totalNum = converterParaNumero(totalRaw)
+
+      let matriculaEfetiva = matRaw
+      if (!matriculaEfetiva && nomeRaw) {
+        matriculaEfetiva = alunoPorNomeMap.get(normalizarChave(nomeRaw)) || ''
+      }
+
+      if (matriculaEfetiva) {
+        saldosDeclaradosPainelTurma.set(matriculaEfetiva, totalNum)
+      }
+    })
+  }
+
+  // 4. Extrair linhas da aba de lançamentos (com detecção inteligente de cabeçalhos)
+  const worksheetLancamentos = workbook.Sheets[abaLancamentosNome]
+  if (!worksheetLancamentos) {
+    throw new Error(`Aba de lançamentos "${abaLancamentosNome}" não encontrada na planilha.`)
+  }
+
+  const extraidoLancamentos = extrairLinhasComCabecalhoInteligente(worksheetLancamentos, [
+    'data',
+    'matricula',
+    'nome',
+    'semestreletivodaatividade',
+    'semestreletivo',
+    'categoria',
+    'horasaceitas',
+    'horas',
+    'comprovante',
+    'relatorio',
+    'observacao',
+    'totalgeralacumulado',
+  ])
+
+  const linhasBrutas = extraidoLancamentos.linhas
+  if (!linhasBrutas || linhasBrutas.length === 0) {
+    throw new Error(`Nenhuma linha de dados encontrada na aba "${abaLancamentosNome}".`)
+  }
+
+  const colunasReais = extraidoLancamentos.cabecalhos
   const mapaColunas = identificarColunas(colunasReais)
 
   // Conjunto de chaves existentes no banco para deduplicação rápida
@@ -746,20 +1157,37 @@ export function processarPlanilhaExcel(params: {
     }
 
     // Normalização de Matrícula
-    const matriculaLimpa = String(matriculaVal).trim().toUpperCase()
+    let matriculaLimpa = String(matriculaVal).trim().toUpperCase()
+
+    // Normalização de Nome
+    let nomeLimpo = String(nomeVal).trim()
+
+    // Enriquecimento a partir do cadastro na aba "Alunos" (se disponível)
+    const cadastroAlunoAba = cadastroAlunosMap.get(matriculaLimpa)
+    if (!nomeLimpo && cadastroAlunoAba?.nome) {
+      nomeLimpo = cadastroAlunoAba.nome
+    }
+    if (!matriculaLimpa && nomeLimpo) {
+      // Tentar encontrar matrícula pelo nome do aluno
+      for (const [mat, cad] of cadastroAlunosMap) {
+        if (normalizarChave(cad.nome) === normalizarChave(nomeLimpo)) {
+          matriculaLimpa = mat
+          break
+        }
+      }
+    }
+
     if (!matriculaLimpa) {
       erros.push('Matrícula ausente ou em branco.')
     }
-
-    // Normalização de Nome
-    const nomeLimpo = String(nomeVal).trim()
     if (!nomeLimpo) {
       erros.push('Nome do estudante ausente.')
     }
 
-    // Turno
+    // Turno: prioriza linha da atividade, depois aba Alunos, depois fallback Matutino
     let turno: 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial' = 'Matutino'
-    const turnoStr = normalizarChave(String(turnoVal))
+    const turnoFonte = String(turnoVal || cadastroAlunoAba?.turno || '')
+    const turnoStr = normalizarChave(turnoFonte)
     if (turnoStr.includes('especial') || turnoStr === 'esp' || turnoStr === 'e') {
       turno = 'Especial'
     } else if (turnoStr.includes('vesp') || turnoStr.includes('tarde') || turnoStr === 'v') {
@@ -772,17 +1200,28 @@ export function processarPlanilhaExcel(params: {
       avisos.push('Turno não especificado claramente: assumido Matutino por padrão.')
     }
 
-    // Semestre atual (1 a 10)
+    // Semestre atual (1 a 10, com suporte a ordinais como "1º", "3º", "5º")
     let semestreAtual = 1
-    const semNum = parseInt(String(semestreAtualVal).replace(/\D/g, ''), 10)
-    if (!isNaN(semNum) && semNum >= 1 && semNum <= 10) {
-      semestreAtual = semNum
+    const semStr = String(semestreAtualVal || cadastroAlunoAba?.semestreAtual || '').trim()
+    const semOrdinalMatch = semStr.match(/^(\d{1,2})(?:º|ª|o|a)?$/i)
+    if (semOrdinalMatch) {
+      const parsed = parseInt(semOrdinalMatch[1], 10)
+      if (parsed >= 1 && parsed <= 10) {
+        semestreAtual = parsed
+      } else {
+        avisos.push('Semestre atual fora da faixa 1 a 10: assumido 1º semestre.')
+      }
     } else {
-      avisos.push('Semestre atual não informado ou inválido: assumido 1º semestre.')
+      const semNum = parseInt(semStr.replace(/\D/g, ''), 10)
+      if (!isNaN(semNum) && semNum >= 1 && semNum <= 10) {
+        semestreAtual = semNum
+      } else {
+        avisos.push('Semestre atual não informado ou inválido: assumido 1º semestre.')
+      }
     }
 
     // Período de entrada (ex: 2024.1, 2025.2)
-    let periodoEntrada = String(periodoEntradaVal).trim()
+    let periodoEntrada = String(periodoEntradaVal || cadastroAlunoAba?.periodoEntrada || '').trim()
     if (!periodoEntrada) {
       // Tentar inferir da matrícula (ex PSI2024101 -> 2024.1)
       const matchMatricula = matriculaLimpa.match(/(\d{4})([12])/)
@@ -795,7 +1234,7 @@ export function processarPlanilhaExcel(params: {
     }
 
     // Email
-    let email = String(emailVal).trim()
+    let email = String(emailVal || cadastroAlunoAba?.email || '').trim()
     if (!email || !email.includes('@')) {
       const slug = normalizarChave(nomeLimpo).slice(0, 15) || matriculaLimpa.toLowerCase()
       email = `${slug}@aluno.fausp.br`
@@ -870,13 +1309,16 @@ export function processarPlanilhaExcel(params: {
       }
     }
 
-    // Identificação de Saldo Declarado na linha (se houver coluna)
+    // Identificação de Saldo Declarado na linha (se houver coluna na aba Lançamentos)
+    // Se não houver, verificamos se a aba "Painel por Turma" trouxe o saldo acumulado
     let saldoDeclaradoLinha: number | undefined
     if (mapaColunas['saldoDeclarado'] && raw[mapaColunas['saldoDeclarado']] !== undefined) {
       const valDeclarado = raw[mapaColunas['saldoDeclarado']]
       if (valDeclarado !== '' && valDeclarado !== null) {
         saldoDeclaradoLinha = converterParaNumero(valDeclarado)
       }
+    } else if (matriculaLimpa && saldosDeclaradosPainelTurma.has(matriculaLimpa)) {
+      saldoDeclaradoLinha = saldosDeclaradosPainelTurma.get(matriculaLimpa)
     }
 
     // Observação
@@ -959,6 +1401,15 @@ export function processarPlanilhaExcel(params: {
     (l) => l.semestreFallbackUtilizado,
   ).length
 
+  const temSaldoDeclaradoNaAbaLancamentos = !!mapaColunas['saldoDeclarado']
+  const temSaldoDeclaradoNoPainelTurma = saldosDeclaradosPainelTurma.size > 0
+  const origemSaldoDeclarado: 'aba_lancamentos' | 'aba_painel_turma' | 'nenhuma' =
+    temSaldoDeclaradoNaAbaLancamentos
+      ? 'aba_lancamentos'
+      : temSaldoDeclaradoNoPainelTurma
+        ? 'aba_painel_turma'
+        : 'nenhuma'
+
   const resumo: ResumoValidacao = {
     totalLinhasLidas: linhasValidadas.length,
     linhasValidas: linhasValidadas.filter((l) => l.status === 'valida').length,
@@ -972,13 +1423,17 @@ export function processarPlanilhaExcel(params: {
     lancamentosDuplicadosIgnorados,
     categoriasNaoEncontradas: categoriasNaoEncontradasMap,
     linhasComSemestreFallback,
+    configDetectada: configDetectada || undefined,
+    origemSaldoDeclarado,
   }
 
   return {
     linhas: linhasValidadas,
     resumo,
-    nomeAbaUsada: primeiraAba,
+    nomeAbaUsada: abaLancamentosNome,
     colunasIdentificadas: mapaColunas,
+    saldosDeclaradosPainelTurma,
+    configDetectada,
   }
 }
 
@@ -988,112 +1443,210 @@ export function processarPlanilhaExcel(params: {
 export function gerarPlanilhaModelo(): void {
   const wb = XLSX.utils.book_new()
 
-  const cabecalho = [
-    'Matricula',
-    'Nome Aluno',
-    'Turno',
-    'Semestre Atual',
-    'Periodo Entrada',
-    'Email',
-    'Categoria Atividade',
-    'Horas',
-    'Data Atividade',
-    'Semestre Atividade',
-    'Horas Totais',
-    'Observacao',
+  // Aba 1: Config Tabela 2026.2 (Banner na linha 1 + Parâmetros + Tabela de Categorias)
+  const bannerConfig = [
+    'CONFIGURAÇÃO — Tabela de Horas Complementares 2026.2: Fonte única de verdade',
+    '',
+    '',
   ]
+  const instConfig = ['Parâmetros (edite somente estas células):', '', '']
+  const paramSemestre = ['Semestre letivo atual:', '2026.2', '']
+  const paramMinimo = ['Mínimo exigido por semestre:', 20, '']
+  const paramMeta = ['Meta do curso:', 200, '']
+  const cabecalhoCategorias = ['Categoria', 'Horas por atividade', 'Máximo do curso']
+  const categoriasExemplo = [
+    ['Eventos científicos com apresentação de trabalho', '20h por evento', 40],
+    ['Eventos científicos sem apresentação de trabalho', '5h por evento', 30],
+    ['Publicação: capítulo de livro', '25h por capítulo', 50],
+    ['Publicação: artigo científico', '25h por artigo', 50],
+    ['Monitoria em disciplinas do curso', '20h por semestre', 60],
+    ['Artes e Cultura', '10h por evento', 150],
+    ['Visitas Técnicas', '10h por visita', 40],
+    ['Estágio Remunerado em Psicologia', '15h a cada 4 meses', 150],
+    ['Cursos Livres Presenciais ou Online', '10h por curso', 120],
+    ['Club de Leitura Mulheres Força da Resistência', '10h por livro', 80],
+  ]
+  const wsConfig = XLSX.utils.aoa_to_sheet([
+    bannerConfig,
+    instConfig,
+    paramSemestre,
+    paramMinimo,
+    paramMeta,
+    cabecalhoCategorias,
+    ...categoriasExemplo,
+  ])
+  wsConfig['!cols'] = [{ wch: 45 }, { wch: 25 }, { wch: 18 }]
+  XLSX.utils.book_append_sheet(wb, wsConfig, 'Config Tabela 2026.2')
 
-  const dadosExemplo = [
+  // Aba 2: Alunos (Banner na linha 1 + Cabeçalhos na linha 2)
+  const bannerAlunos = [
+    'CADASTRO DE ALUNOS: Matrícula única usada nos lançamentos.',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]
+  const cabecalhoAlunos = ['Nome', 'Matrícula', 'Turno', 'Semestre atual', 'Entrada', 'E-mail']
+  const alunosExemplo = [
     [
-      'PSI2024201',
       'Mariana Costa Silveira',
+      'PSI2024201',
       'Matutino',
-      4,
+      '4º',
       '2024.2',
       'mariana.silveira@aluno.fausp.br',
-      'Eventos científicos com apresentação de trabalho',
-      20,
-      '2024-05-10',
-      '2024.1',
-      30,
-      'Apresentação no Congresso Brasileiro de Psicologia',
     ],
     [
-      'PSI2024201',
-      'Mariana Costa Silveira',
-      'Matutino',
-      4,
-      '2024.2',
-      'mariana.silveira@aluno.fausp.br',
-      'Artes e Cultura',
-      10,
-      '2024-10-15',
-      '2024.2',
-      30,
-      'Visita guiada a museu e análise crítica',
-    ],
-    [
-      'PSI2025102',
       'Lucas Gabriel dos Santos',
+      'PSI2025102',
       'Noturno',
-      3,
+      '3º',
       '2025.1',
       'lucas.santos@aluno.fausp.br',
-      'Cursos Livres Presenciais ou Online',
-      10,
-      '2025-04-20',
-      '2025.1',
-      10,
-      'Curso de Extensão em Saúde Mental',
     ],
     [
-      'PSI2026103',
       'Beatriz Ramos Albuquerque',
+      'PSI2026103',
       'Matutino',
-      2,
-      '2026.1',
+      '1º',
+      '2026.2',
       'beatriz.ramos@aluno.fausp.br',
+    ],
+  ]
+  const wsAlunos = XLSX.utils.aoa_to_sheet([bannerAlunos, cabecalhoAlunos, ...alunosExemplo])
+  wsAlunos['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 14 }, { wch: 32 }]
+  XLSX.utils.book_append_sheet(wb, wsAlunos, 'Alunos')
+
+  // Aba 3: Lançamentos (Banner na linha 1 + Cabeçalhos na linha 2)
+  const bannerLancamentos = [
+    'LANÇAMENTOS DE HORAS COMPLEMENTARES: Uma linha por atividade aceita.',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]
+  const cabecalhoLancamentos = [
+    'Data',
+    'Matrícula',
+    'Nome do aluno',
+    'Semestre letivo da atividade',
+    'Categoria',
+    'Horas aceitas',
+    'Comprovante OK? (SIM/NÃO)',
+    'Relatório OK? (SIM/NÃO)',
+    'Observação',
+  ]
+  const lancamentosExemplo = [
+    [
+      '15/03/2025',
+      'PSI2024201',
+      'Mariana Costa Silveira',
+      '2024.2',
+      'Eventos científicos com apresentação de trabalho',
+      20,
+      'SIM',
+      'SIM',
+      'Congresso Brasileiro de Psicologia',
+    ],
+    [
+      '2026-10-04T03:06:28.000Z',
+      'PSI2024201',
+      'Mariana Costa Silveira',
+      '2026.1',
       'Artes e Cultura',
       10,
-      '2026-04-12',
-      '2026.1',
-      10,
-      'Visita Técnica e Relatório Crítico de Cinema',
+      'SIM',
+      'SIM',
+      'Visita técnica a centro cultural',
     ],
     [
-      'PSI2023104',
-      'Felipe Augusto Nogueira',
-      'Noturno',
-      7,
-      '2023.1',
-      'felipe.nogueira@aluno.fausp.br',
-      'Estágio supervisionado extracurricular',
-      30,
-      '2025-10-18',
-      '2025.2',
-      30,
-      'Estágio Extracurricular Hospitalar',
+      '20/09/2025',
+      'PSI2025102',
+      'Lucas Gabriel dos Santos',
+      '2025.1',
+      'Cursos Livres Presenciais ou Online',
+      10,
+      'SIM',
+      'SIM',
+      'Curso de extensão em Saúde Mental',
+    ],
+    [
+      '15/09/2026',
+      'PSI2026103',
+      'Beatriz Ramos Albuquerque',
+      '2026.2',
+      'Artes e Cultura',
+      10,
+      'SIM',
+      'SIM',
+      'Seminário e peça de teatro',
     ],
   ]
-
-  const ws = XLSX.utils.aoa_to_sheet([cabecalho, ...dadosExemplo])
-
-  ws['!cols'] = [
-    { wch: 16 }, // Matricula
-    { wch: 32 }, // Nome
-    { wch: 12 }, // Turno
-    { wch: 15 }, // Semestre Atual
-    { wch: 16 }, // Periodo Entrada
-    { wch: 30 }, // Email
-    { wch: 45 }, // Categoria
-    { wch: 10 }, // Horas
-    { wch: 15 }, // Data
-    { wch: 18 }, // Semestre Atividade
-    { wch: 14 }, // Horas Totais
-    { wch: 45 }, // Obs
+  const wsLancamentos = XLSX.utils.aoa_to_sheet([
+    bannerLancamentos,
+    cabecalhoLancamentos,
+    ...lancamentosExemplo,
+  ])
+  wsLancamentos['!cols'] = [
+    { wch: 15 },
+    { wch: 14 },
+    { wch: 28 },
+    { wch: 20 },
+    { wch: 40 },
+    { wch: 12 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 35 },
   ]
+  XLSX.utils.book_append_sheet(wb, wsLancamentos, 'Lançamentos')
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Modelo Importacao')
+  // Aba 4: Painel por Turma (Banner na linha 1 + Cabeçalhos na linha 2)
+  const bannerTurma = [
+    'PAINEL POR TURMA — VISÃO GERENCIAL: Balanço semestral',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]
+  const cabecalhoTurma = [
+    'Nome',
+    'Turno',
+    'Semestre atual',
+    'Entrada',
+    'Total geral acumulado',
+    'Horas do semestre atual',
+    'Restante semestre atual',
+    'Restante até o fim do curso',
+    'Balanço semestral',
+  ]
+  const turmaExemplo = [
+    ['Mariana Costa Silveira', 'Matutino', 4, '2024.2', 30, 10, 10, 170, 'CUMPRIU'],
+    ['Lucas Gabriel dos Santos', 'Noturno', 3, '2025.1', 10, 10, 10, 190, 'CUMPRIU'],
+    ['Beatriz Ramos Albuquerque', 'Matutino', 1, '2026.2', 10, 10, 10, 190, 'CUMPRIU'],
+  ]
+  const wsTurma = XLSX.utils.aoa_to_sheet([bannerTurma, cabecalhoTurma, ...turmaExemplo])
+  wsTurma['!cols'] = [
+    { wch: 28 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 20 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 24 },
+    { wch: 16 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsTurma, 'Painel por Turma')
+
   XLSX.writeFile(wb, 'Modelo_Importacao_Horas_Psicologia_FAUSP.xlsx')
 }
 
