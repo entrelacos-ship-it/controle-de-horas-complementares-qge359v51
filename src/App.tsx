@@ -14,6 +14,7 @@ import LancamentoRapido from '@/pages/LancamentoRapido'
 import AlunosList from '@/pages/AlunosList'
 import AlunoIndividual from '@/pages/AlunoIndividual'
 import Turmas from '@/pages/Turmas'
+import Importacao from '@/pages/Importacao'
 import ConfiguracoesNDE from '@/pages/ConfiguracoesNDE'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/alunos" element={<AlunosList />} />
             <Route path="/alunos/:id" element={<AlunoIndividual />} />
             <Route path="/turmas" element={<Turmas />} />
+            <Route path="/importacao" element={<Importacao />} />
             <Route path="/configuracoes" element={<ConfiguracoesNDE />} />
           </Route>
 

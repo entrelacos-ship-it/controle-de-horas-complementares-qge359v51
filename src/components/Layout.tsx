@@ -8,21 +8,12 @@ import {
   Users,
   Building2,
   Settings,
+  FileSpreadsheet,
   LogOut,
   Menu,
   X,
-  User as UserIcon,
   ShieldCheck,
 } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
 export default function Layout() {
@@ -41,6 +32,7 @@ export default function Layout() {
     { label: 'Lançamento Rápido', path: '/lancamento', icon: Zap },
     { label: 'Alunos', path: '/alunos', icon: Users },
     { label: 'Turmas', path: '/turmas', icon: Building2 },
+    { label: 'Importação Legada', path: '/importacao', icon: FileSpreadsheet },
     { label: 'Configurações', path: '/configuracoes', icon: Settings },
   ]
 
@@ -52,27 +44,32 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f8fafc] text-[#0f172a]">
-      {/* Top Navigation Bar in deep institutional navy #0f2b48 */}
-      <header className="sticky top-0 z-40 w-full bg-[#0f2b48] text-white shadow-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          {/* Brand Left */}
-          <NavLink to="/" className="flex items-center gap-3 transition-opacity hover:opacity-90">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#1d4ed8] text-white shadow-inner">
+    <div className="flex min-h-screen bg-[#f8fafc] text-[#0f172a]">
+      {/* ========================================================
+          DESKTOP SIDEBAR (fixa à esquerda, ~260px, fundo navy #0f2b48)
+         ======================================================== */}
+      <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 z-40 bg-[#0f2b48] text-white shadow-xl border-r border-[#1a3d61]">
+        {/* Brand / Logo Topo */}
+        <div className="flex h-20 shrink-0 items-center px-5 border-b border-[#1b3e63]/70">
+          <NavLink to="/" className="flex items-center gap-3 transition-opacity hover:opacity-95">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1d4ed8] text-white shadow-md ring-2 ring-white/10">
               <GraduationCap className="h-6 w-6" />
             </div>
-            <div className="flex flex-col">
-              <span className="font-['Outfit'] text-base font-bold tracking-tight text-white sm:text-lg">
-                Controle de Horas Complementares
+            <div className="flex flex-col overflow-hidden">
+              <span className="font-['Outfit'] text-[15px] font-bold leading-tight tracking-tight text-white line-clamp-2">
+                Horas Complementares
               </span>
-              <span className="text-xs font-normal text-slate-300">
-                Curso de Psicologia · FAUSP
-              </span>
+              <span className="text-[11px] font-medium text-blue-200/80">Psicologia · FAUSP</span>
             </div>
           </NavLink>
+        </div>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden items-center gap-1 md:flex">
+        {/* Navigation Items (verticais com destaque do ativo) */}
+        <div className="flex-1 overflow-y-auto px-3 py-5">
+          <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400/80">
+            Menu Principal
+          </div>
+          <nav className="flex flex-col space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive =
@@ -83,139 +80,202 @@ export default function Layout() {
                 <NavLink
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`group flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-white/15 text-white shadow-sm ring-1 ring-white/20'
-                      : 'text-slate-200 hover:bg-white/10 hover:text-white'
+                      ? 'bg-[#1d4ed8] text-white shadow-sm ring-1 ring-white/20'
+                      : 'text-slate-300 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
-                  <span>{item.label}</span>
+                  <Icon
+                    className={`h-4 w-4 shrink-0 transition-transform group-hover:scale-105 ${
+                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
+                    }`}
+                  />
+                  <span className="truncate">{item.label}</span>
+                  {isActive && (
+                    <span className="ml-auto h-2 w-2 rounded-full bg-blue-300 shadow-sm" />
+                  )}
                 </NavLink>
               )
             })}
           </nav>
+        </div>
 
-          {/* User Profile / Mobile Toggle */}
-          <div className="flex items-center gap-3">
-            {user && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 rounded-full p-1 text-left ring-2 ring-transparent transition hover:ring-white/20 focus:outline-none focus:ring-[#1d4ed8]">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1d4ed8] text-xs font-bold text-white shadow-sm">
+        {/* Perfil do Usuário na Base da Sidebar */}
+        {user && (
+          <div className="shrink-0 border-t border-[#1b3e63]/70 bg-[#0c2238] p-3.5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1d4ed8] text-xs font-bold text-white shadow-md ring-2 ring-white/15">
+                {getInitials(user.name)}
+              </div>
+              <div className="flex flex-1 min-w-0 flex-col">
+                <span className="truncate text-xs font-semibold leading-tight text-white">
+                  {user.name}
+                </span>
+                <span className="truncate text-[11px] text-slate-300">{user.email}</span>
+                <div className="mt-1">
+                  <Badge
+                    variant="secondary"
+                    className={`text-[10px] py-0 px-1.5 h-4 font-normal ${
+                      user.role === 'Administrador'
+                        ? 'bg-purple-900/60 text-purple-200 border border-purple-400/30'
+                        : 'bg-blue-900/60 text-blue-200 border border-blue-400/30'
+                    }`}
+                  >
+                    <ShieldCheck className="mr-1 h-2.5 w-2.5" />
+                    {user.role || 'Coordenador'}
+                  </Badge>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                title="Sair do sistema"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-red-500/20 hover:text-red-300 focus:outline-none focus:ring-1 focus:ring-red-400"
+                aria-label="Sair"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {/* ========================================================
+          MOBILE TOPBAR + SLIDE-IN DRAWER
+         ======================================================== */}
+      <div className="flex flex-1 flex-col md:pl-[260px]">
+        {/* Mobile Header (visível apenas em telas menores) */}
+        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-[#1b3e63] bg-[#0f2b48] px-4 text-white shadow-md md:hidden">
+          <NavLink to="/" className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1d4ed8] text-white">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-['Outfit'] text-sm font-bold leading-tight text-white">
+                Horas Complementares
+              </span>
+              <span className="text-[10px] text-slate-300">Psicologia · FAUSP</span>
+            </div>
+          </NavLink>
+
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-md p-1 text-slate-200 hover:bg-white/10"
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        </header>
+
+        {/* Mobile Drawer Backdrop & Drawer */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+
+            {/* Lateral Drawer deslizante */}
+            <div className="fixed inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col bg-[#0f2b48] text-white shadow-2xl transition-transform">
+              {/* Drawer Top */}
+              <div className="flex h-16 items-center justify-between border-b border-[#1b3e63] px-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1d4ed8] text-white">
+                    <GraduationCap className="h-5 w-5" />
+                  </div>
+                  <span className="font-['Outfit'] text-sm font-bold text-white">
+                    Psicologia · FAUSP
+                  </span>
+                </div>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="rounded-md p-1 text-slate-300 hover:bg-white/10 hover:text-white"
+                  aria-label="Fechar menu"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Drawer Navigation Links */}
+              <div className="flex-1 overflow-y-auto px-3 py-4">
+                <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Navegação
+                </div>
+                <nav className="flex flex-col space-y-1">
+                  {navItems.map((item) => {
+                    const Icon = item.icon
+                    const isActive =
+                      item.path === '/'
+                        ? location.pathname === '/'
+                        : location.pathname.startsWith(item.path)
+                    return (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium ${
+                          isActive
+                            ? 'bg-[#1d4ed8] text-white font-semibold'
+                            : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                      </NavLink>
+                    )
+                  })}
+                </nav>
+              </div>
+
+              {/* Drawer Footer com perfil do usuário */}
+              {user && (
+                <div className="shrink-0 border-t border-[#1b3e63] bg-[#0c2238] p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1d4ed8] text-xs font-bold text-white">
                       {getInitials(user.name)}
                     </div>
-                    <div className="hidden flex-col pr-1 text-left sm:flex">
-                      <span className="text-xs font-semibold leading-tight text-white">
-                        {user.name}
-                      </span>
-                      <span className="text-[11px] font-normal leading-tight text-slate-300">
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-xs font-semibold text-white">{user.name}</span>
+                      <span className="truncate text-[11px] text-slate-400">{user.email}</span>
+                      <span className="text-[10px] text-blue-300">
                         {user.role || 'Coordenador'}
                       </span>
                     </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false)
+                      handleLogout()
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-md bg-red-600/80 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sair da Conta
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 bg-white text-slate-900 shadow-lg">
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-semibold leading-none text-slate-900">
-                        {user.name}
-                      </p>
-                      <p className="text-xs leading-none text-slate-500">{user.email}</p>
-                      <div className="pt-1.5">
-                        <Badge
-                          variant="secondary"
-                          className={
-                            user.role === 'Administrador'
-                              ? 'bg-purple-100 text-purple-700 hover:bg-purple-100 text-[11px]'
-                              : 'bg-blue-100 text-blue-700 hover:bg-blue-100 text-[11px]'
-                          }
-                        >
-                          <ShieldCheck className="mr-1 h-3 w-3" />
-                          {user.role || 'Coordenador'}
-                        </Badge>
-                      </div>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleLogout}
-                    className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Sair</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-
-            {/* Mobile Hamburger button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="flex h-9 w-9 items-center justify-center rounded-md p-1 text-slate-200 hover:bg-white/10 md:hidden"
-              aria-label="Menu"
-            >
-              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile slide-in Drawer / Menu */}
-        {mobileMenuOpen && (
-          <div className="border-t border-slate-700 bg-[#0f2b48] px-4 py-3 md:hidden">
-            <nav className="flex flex-col space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon
-                const isActive =
-                  item.path === '/'
-                    ? location.pathname === '/'
-                    : location.pathname.startsWith(item.path)
-                return (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium ${
-                      isActive
-                        ? 'bg-white/15 text-white'
-                        : 'text-slate-200 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                )
-              })}
-              <div className="pt-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleLogout}
-                  className="w-full justify-start text-xs"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sair da Conta
-                </Button>
-              </div>
-            </nav>
+                </div>
+              )}
+            </div>
           </div>
         )}
-      </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <Outlet />
-        </div>
-      </main>
+        {/* ========================================================
+            MAIN CONTENT AREA
+           ======================================================== */}
+        <main className="flex-1">
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <Outlet />
+          </div>
+        </main>
 
-      {/* Slim institutional footer */}
-      <footer className="border-t border-slate-200 bg-[#e2e8f0] py-3 text-center text-xs text-slate-600">
-        <div className="mx-auto max-w-7xl px-4">
-          © 2026 Coordenação do Curso de Psicologia — FAUSP · Prof.ª Roberta Andrea de Oliveira (CRP
-          06/77114)
-        </div>
-      </footer>
+        {/* Slim institutional footer */}
+        <footer className="border-t border-slate-200 bg-[#e2e8f0] py-3 text-center text-xs text-slate-600">
+          <div className="mx-auto max-w-7xl px-4">
+            © 2026 Coordenação do Curso de Psicologia — FAUSP · Prof.ª Roberta Andrea de Oliveira
+            (CRP 06/77114)
+          </div>
+        </footer>
+      </div>
     </div>
   )
 }

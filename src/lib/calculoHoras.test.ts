@@ -5,6 +5,7 @@ import {
   calcularProgressoAluno,
 } from './calculoHoras'
 import { gerarTextoDespacho } from './formatadorDespacho'
+import { executarTestesImportacao } from './importacaoPlanilha.test'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '../types'
 
 /**
@@ -151,6 +152,10 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
   } else {
     throw new Error('CT-05 falhou')
   }
+
+  // Executar também a suíte de importação de planilha
+  const testesImportacao = executarTestesImportacao()
+  resultados.push(...testesImportacao.resultados)
 
   return { todosPassaram: true, resultados }
 }
