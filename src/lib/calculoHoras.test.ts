@@ -8,6 +8,11 @@ import { gerarTextoDespacho } from './formatadorDespacho'
 import { executarTestesImportacao } from './importacaoPlanilha.test'
 import { executarTestesAuth } from './authValidations.test'
 import { sanitizarNomeColunaCategoria, gerarLinhasDadosCsv } from './exportacaoTurma'
+import {
+  obterNomeArquivoRelatorioAluno,
+  gerarRelatorioAlunoPdf,
+  exportarRelatoriosEmLotePdf,
+} from './exportacaoRelatorioAlunoPdf'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '../types'
 
 /**
@@ -293,6 +298,68 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
     throw new Error(`CT-07.6 falhou: Nome de arquivo inesperado: ${exportacaoCsvTeste.nomeArquivo}`)
   }
   resultados.push('CT-07.3: Nomenclatura automática de arquivo dados-alunos-2026.2.csv passou.')
+
+  // CT-08: Geração de Relatório PDF Individual do Aluno e Multi-aluno em Lote
+  const nomePadraoRelatorio = obterNomeArquivoRelatorioAluno(mockAluno3Semestre, mockConfig)
+  if (nomePadraoRelatorio !== 'relatorio-aluno-psi001-2026-2.pdf') {
+    throw new Error(`CT-08.1 falhou: Nome de arquivo PDF incorreto: ${nomePadraoRelatorio}`)
+  }
+  resultados.push('CT-08.1: Nomenclatura oficial do relatório PDF do estudante passou.')
+
+  const resultadoPdf = gerarRelatorioAlunoPdf({
+    aluno: mockAluno3Semestre,
+    lancamentos: lancamentos,
+    categorias: [mockCatEventos, mockCatCursos],
+    config: mockConfig,
+    salvarArquivo: false,
+  })
+
+  if (!resultadoPdf.doc || resultadoPdf.doc.getNumberOfPages() < 1) {
+    throw new Error('CT-08.2 falhou: Documento jsPDF não gerou páginas válidas')
+  }
+  resultados.push('CT-08.2: Renderização de estrutura institucional do PDF individual passou.')
+
+  // Validar geração com categoria bloqueada (CT-02 / CT-03)
+  const lancamentosNoTeto: Lancamento[] = [
+    {
+      id: 'l1',
+      aluno_id: mockAluno3Semestre.id,
+      categoria_id: mockCatEventos.id,
+      data_lancamento: '2026-08-10',
+      semestre_letivo_atividade: '2026.2',
+      horas_aceitas: 40, // atinge teto 40h
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2026-08-10',
+      updated: '2026-08-10',
+    },
+    {
+      id: 'l2',
+      aluno_id: mockAluno3Semestre.id,
+      categoria_id: mockCatEventos.id,
+      data_lancamento: '2026-08-11',
+      semestre_letivo_atividade: '2026.2',
+      horas_aceitas: -5, // estorno
+      comprovante_ok: true,
+      relatorio_ok: true,
+      observacao: 'Ajuste de carga horária',
+      created: '2026-08-11',
+      updated: '2026-08-11',
+    },
+  ]
+
+  const resultadoPdfEstorno = gerarRelatorioAlunoPdf({
+    aluno: mockAluno3Semestre,
+    lancamentos: lancamentosNoTeto,
+    categorias: [mockCatEventos, mockCatCursos],
+    config: mockConfig,
+    salvarArquivo: false,
+  })
+
+  if (!resultadoPdfEstorno.doc || resultadoPdfEstorno.doc.getNumberOfPages() < 1) {
+    throw new Error('CT-08.3 falhou: PDF com estorno e lançamentos negativos falhou')
+  }
+  resultados.push('CT-08.3: Geração de PDF com histórico e estornos auditáveis passou.')
 
   return { todosPassaram: true, resultados }
 }

@@ -37,6 +37,10 @@ import {
   type TurmaItemExportacao,
 } from '@/lib/exportacaoTurma'
 import {
+  gerarRelatorioAlunoPdf,
+  exportarRelatoriosEmLotePdf,
+} from '@/lib/exportacaoRelatorioAlunoPdf'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -68,6 +72,8 @@ export default function Turmas() {
   const [exportandoCsv, setExportandoCsv] = useState(false)
   const [exportandoDadosCsv, setExportandoDadosCsv] = useState(false)
   const [exportandoPdf, setExportandoPdf] = useState(false)
+  const [exportandoRelatoriosLote, setExportandoRelatoriosLote] = useState(false)
+  const [alunoBaixandoPdfId, setAlunoBaixandoPdfId] = useState<string | null>(null)
 
   const carregarDados = async () => {
     try {
@@ -287,6 +293,59 @@ export default function Turmas() {
     }
   }
 
+  const handleExportarRelatoriosLote = async () => {
+    if (alunosFiltrados.length === 0) return
+    try {
+      setExportandoRelatoriosLote(true)
+      const res = await exportarRelatoriosEmLotePdf({
+        alunos: alunosFiltrados,
+        lancamentos,
+        categorias,
+        config,
+      })
+      toast({
+        title: 'Relatórios em lote gerados!',
+        description: `Arquivo multi-aluno ${res.nomeArquivo} gerado com ${res.totalExportados} estudantes filtrados.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao gerar relatórios em lote',
+        description: 'Ocorreu uma falha ao gerar os relatórios em PDF.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportandoRelatoriosLote(false)
+    }
+  }
+
+  const handleBaixarPdfAlunoIndividual = (e: React.MouseEvent, aluno: Aluno) => {
+    e.stopPropagation()
+    try {
+      setAlunoBaixandoPdfId(aluno.id)
+      const { nomeArquivo } = gerarRelatorioAlunoPdf({
+        aluno,
+        lancamentos,
+        categorias,
+        config,
+        salvarArquivo: true,
+      })
+      toast({
+        title: 'Relatório PDF emitido!',
+        description: `Arquivo ${nomeArquivo} baixado para ${aluno.nome}.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao gerar PDF',
+        description: 'Não foi possível renderizar o relatório do estudante.',
+        variant: 'destructive',
+      })
+    } finally {
+      setAlunoBaixandoPdfId(null)
+    }
+  }
+
   const handlePromoverSemestres = async () => {
     try {
       setPromovendo(true)
@@ -381,21 +440,38 @@ export default function Turmas() {
               Relatório CSV
             </Button>
 
-            {/* Botão Exportar PDF */}
+            {/* Botão Exportar PDF Turma (Paisagem) */}
             <Button
               variant="outline"
               size="sm"
               onClick={handleExportarPdf}
               disabled={exportandoPdf || loading || alunosFiltrados.length === 0}
               className="text-xs text-slate-700 hover:text-red-700 hover:border-red-300 hover:bg-red-50/50 shadow-xs"
-              title="Exportar relatório institucional oficial em PDF Paisagem"
+              title="Exportar relatório consolidado da turma em PDF Paisagem"
             >
               {exportandoPdf ? (
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-red-600" />
               ) : (
                 <FileText className="mr-1.5 h-3.5 w-3.5 text-red-600" />
               )}
-              PDF Oficial
+              PDF da Turma
+            </Button>
+
+            {/* NOVO: Botão Exportar Relatórios Individuais em Lote (PDF Multi-aluno) */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportarRelatoriosLote}
+              disabled={exportandoRelatoriosLote || loading || alunosFiltrados.length === 0}
+              className="text-xs font-semibold text-[#0f2b48] border-indigo-200 hover:bg-indigo-50/70 hover:border-indigo-400 shadow-xs"
+              title="Gerar um documento PDF completo com os balanços pedagógicos individuais de todos os estudantes filtrados na tela"
+            >
+              {exportandoRelatoriosLote ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-indigo-600" />
+              ) : (
+                <FileText className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
+              )}
+              Relatórios em Lote ({alunosFiltrados.length})
             </Button>
 
             <AlertDialog>
@@ -961,16 +1037,33 @@ export default function Turmas() {
                       </td>
 
                       <td className="px-4 py-3 text-right">
-                        <Link to={`/alunos/${aluno.id}`}>
+                        <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 text-xs text-[#1d4ed8] hover:bg-blue-50"
+                            onClick={(e) => handleBaixarPdfAlunoIndividual(e, aluno)}
+                            disabled={alunoBaixandoPdfId === aluno.id}
+                            className="h-7 px-2 text-xs text-slate-700 hover:text-red-700 hover:bg-red-50"
+                            title={`Baixar Relatório PDF individual de ${aluno.nome}`}
                           >
-                            Acessar Ficha
-                            <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                            {alunoBaixandoPdfId === aluno.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
+                            ) : (
+                              <FileText className="h-3.5 w-3.5 text-red-600 mr-1" />
+                            )}
+                            PDF
                           </Button>
-                        </Link>
+                          <Link to={`/alunos/${aluno.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-[#1d4ed8] hover:bg-blue-50"
+                            >
+                              Ficha
+                              <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                            </Button>
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   )

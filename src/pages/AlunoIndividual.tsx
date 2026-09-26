@@ -10,6 +10,7 @@ import {
   isCategoriaBloqueada,
 } from '@/lib/calculoHoras'
 import { gerarTextoDespacho, formatarDataBr } from '@/lib/formatadorDespacho'
+import { gerarRelatorioAlunoPdf } from '@/lib/exportacaoRelatorioAlunoPdf'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal, AlunoProgresso } from '@/types'
 import {
   ArrowLeft,
@@ -27,6 +28,7 @@ import {
   User,
   Loader2,
   HelpCircle,
+  Download,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -56,6 +58,7 @@ export default function AlunoIndividual() {
   const [despachoCompletoModal, setDespachoCompletoModal] = useState(false)
   const [textoDespacho, setTextoDespacho] = useState('')
   const [copied, setCopied] = useState(false)
+  const [gerandoPdf, setGerandoPdf] = useState(false)
 
   const carregarDadosAluno = async () => {
     if (!id) return
@@ -117,6 +120,33 @@ export default function AlunoIndividual() {
     setDespachoCompletoModal(true)
   }
 
+  const handleGerarRelatorioPdf = () => {
+    if (!aluno) return
+    try {
+      setGerandoPdf(true)
+      const { nomeArquivo } = gerarRelatorioAlunoPdf({
+        aluno,
+        lancamentos,
+        categorias,
+        config,
+        salvarArquivo: true,
+      })
+      toast({
+        title: 'Relatório em PDF gerado!',
+        description: `Arquivo ${nomeArquivo} gerado e baixado com sucesso.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao gerar relatório PDF',
+        description: 'Ocorreu uma falha ao renderizar o documento do aluno.',
+        variant: 'destructive',
+      })
+    } finally {
+      setGerandoPdf(false)
+    }
+  }
+
   const handleCopiarDespacho = async () => {
     if (!textoDespacho) return
     try {
@@ -169,13 +199,29 @@ export default function AlunoIndividual() {
 
         <div className="flex items-center gap-2">
           <Button
+            onClick={handleGerarRelatorioPdf}
+            disabled={gerandoPdf}
+            variant="outline"
+            size="sm"
+            className="text-xs text-[#0f2b48] border-[#0f2b48]/30 hover:bg-blue-50/70 font-semibold shadow-xs"
+            title="Gerar e baixar documento PDF oficial de balanço pedagógico deste estudante"
+          >
+            {gerandoPdf ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-[#1d4ed8]" />
+            ) : (
+              <Download className="mr-1.5 h-3.5 w-3.5 text-[#1d4ed8]" />
+            )}
+            Gerar Relatório PDF
+          </Button>
+
+          <Button
             onClick={handleGerarDespachoCompleto}
             variant="outline"
             size="sm"
             className="text-xs text-[#0f2b48]"
           >
             <FileText className="mr-1.5 h-3.5 w-3.5 text-[#1d4ed8]" />
-            Gerar Despacho Completo
+            Despacho Texto
           </Button>
 
           <Link to="/lancamento">

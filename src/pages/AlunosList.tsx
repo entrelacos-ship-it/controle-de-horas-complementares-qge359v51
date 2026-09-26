@@ -8,8 +8,10 @@ import {
   ResultadoViradaSemestre,
 } from '@/services/alunos'
 import { listarTodosLancamentos } from '@/services/lancamentos'
+import { listarCategorias } from '@/services/categorias'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
-import type { Aluno, Lancamento, ConfiguracaoGlobal, TurnoAluno } from '@/types'
+import { gerarRelatorioAlunoPdf } from '@/lib/exportacaoRelatorioAlunoPdf'
+import type { Aluno, Lancamento, Categoria, ConfiguracaoGlobal, TurnoAluno } from '@/types'
 import {
   Users,
   Search,
@@ -28,6 +30,7 @@ import {
   Info,
   Calendar,
   AlertCircle,
+  FileText,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -71,8 +74,10 @@ export default function AlunosList() {
 
   const [alunos, setAlunos] = useState<Aluno[]>([])
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
+  const [categorias, setCategorias] = useState<Categoria[]>([])
   const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
   const [loading, setLoading] = useState(true)
+  const [alunoBaixandoPdfId, setAlunoBaixandoPdfId] = useState<string | null>(null)
 
   // Filtros
   const [busca, setBusca] = useState('')
@@ -106,13 +111,15 @@ export default function AlunosList() {
   const carregarDados = async () => {
     try {
       setLoading(true)
-      const [als, lcs, cfg] = await Promise.all([
+      const [als, lcs, cats, cfg] = await Promise.all([
         listarAlunos(),
         listarTodosLancamentos(),
+        listarCategorias(),
         getConfiguracaoGlobal(),
       ])
       setAlunos(als)
       setLancamentos(lcs)
+      setCategorias(cats)
       setConfig(cfg)
     } catch (err) {
       console.error(err)
@@ -168,6 +175,33 @@ export default function AlunosList() {
   }
 
   // Abertura do modal de edição
+  const handleBaixarRelatorioPdfAluno = (e: React.MouseEvent, a: Aluno) => {
+    e.stopPropagation()
+    try {
+      setAlunoBaixandoPdfId(a.id)
+      const { nomeArquivo } = gerarRelatorioAlunoPdf({
+        aluno: a,
+        lancamentos,
+        categorias,
+        config,
+        salvarArquivo: true,
+      })
+      toast({
+        title: 'Relatório PDF emitido!',
+        description: `Arquivo ${nomeArquivo} gerado com sucesso.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao gerar PDF',
+        description: 'Não foi possível gerar o relatório do aluno.',
+        variant: 'destructive',
+      })
+    } finally {
+      setAlunoBaixandoPdfId(null)
+    }
+  }
+
   const handleAbrirEditarAluno = (e: React.MouseEvent, a: Aluno) => {
     e.stopPropagation() // Não navegar para o prontuário
     setEditingAlunoId(a.id)
@@ -569,6 +603,21 @@ export default function AlunosList() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={(e) => handleBaixarRelatorioPdfAluno(e, aluno)}
+                            disabled={alunoBaixandoPdfId === aluno.id}
+                            className="h-7 px-2 text-xs text-slate-600 hover:text-red-700 hover:bg-red-50"
+                            title="Baixar Relatório PDF de Balanço Pedagógico"
+                          >
+                            {alunoBaixandoPdfId === aluno.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
+                            ) : (
+                              <FileText className="h-3.5 w-3.5 mr-1 text-red-600" />
+                            )}
+                            PDF
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={(e) => handleAbrirEditarAluno(e, aluno)}
                             className="h-7 px-2 text-xs text-slate-600 hover:text-[#1d4ed8] hover:bg-blue-100"
                             title="Editar Dados Cadastrais"
@@ -581,7 +630,7 @@ export default function AlunosList() {
                             size="sm"
                             className="h-7 text-xs text-[#1d4ed8] hover:bg-blue-100"
                           >
-                            Prontuário
+                            Ficha
                             <ChevronRight className="ml-1 h-3.5 w-3.5" />
                           </Button>
                         </div>
