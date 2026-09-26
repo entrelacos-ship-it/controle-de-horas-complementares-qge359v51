@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { listarAlunos, promoverTodosAlunos } from '@/services/alunos'
 import { listarTodosLancamentos } from '@/services/lancamentos'
+import { listarCategorias } from '@/services/categorias'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
-import type { Aluno, Lancamento, ConfiguracaoGlobal } from '@/types'
+import type { Aluno, Lancamento, Categoria, ConfiguracaoGlobal } from '@/types'
+import { TurmaVisualizacaoGraficos } from '@/components/TurmaVisualizacaoGraficos'
 import {
   Building2,
   Users,
@@ -51,6 +53,7 @@ export default function Turmas() {
 
   const [alunos, setAlunos] = useState<Aluno[]>([])
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
+  const [categorias, setCategorias] = useState<Categoria[]>([])
   const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -67,13 +70,15 @@ export default function Turmas() {
   const carregarDados = async () => {
     try {
       setLoading(true)
-      const [als, lcs, cfg] = await Promise.all([
+      const [als, lcs, cats, cfg] = await Promise.all([
         listarAlunos(),
         listarTodosLancamentos(),
+        listarCategorias(),
         getConfiguracaoGlobal(),
       ])
       setAlunos(als)
       setLancamentos(lcs)
+      setCategorias(cats)
       setConfig(cfg)
     } catch (err) {
       console.error(err)
@@ -544,6 +549,19 @@ export default function Turmas() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Painel de Visualização de Dados (Recharts) por Turma e Categoria NDE */}
+      {!loading && (
+        <TurmaVisualizacaoGraficos
+          alunosFiltrados={alunosFiltrados}
+          lancamentos={lancamentos}
+          categorias={categorias}
+          config={config}
+          metricasPorAluno={metricasPorAluno}
+          semestreAtual={semestreAtual}
+          minimoSemestral={minimoSemestral}
+        />
+      )}
 
       {/* Barra de Filtros Combinados (Entrada + Turno + Balanço Semestral + Busca) */}
       <Card className="border-slate-200 shadow-sm">
