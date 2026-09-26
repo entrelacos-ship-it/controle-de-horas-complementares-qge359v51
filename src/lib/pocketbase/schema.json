@@ -1,0 +1,306 @@
+{
+  "generatedAt": "2026-09-26T12:23:04.038Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "id = @request.auth.id",
+        "view": "id = @request.auth.id",
+        "create": "",
+        "update": "id = @request.auth.id",
+        "delete": "id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "role",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Coordenador", "Administrador"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "configuracao_global",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != '' && @request.auth.role = 'Administrador'",
+        "update": "@request.auth.id != '' && @request.auth.role = 'Administrador'",
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "semestre_letivo_atual",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "minimo_exigido_semestre",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "meta_curso",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "categorias",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != '' && @request.auth.role = 'Administrador'",
+        "update": "@request.auth.id != '' && @request.auth.role = 'Administrador'",
+        "delete": "@request.auth.id != '' && @request.auth.role = 'Administrador'"
+      },
+      "fields": [
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "regra_horas_unitaria",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "teto_maximo_curso",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_categorias_ativo ON categorias (ativo)"]
+    },
+    {
+      "name": "alunos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "matricula",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "turno",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Matutino", "Noturno"]
+        },
+        {
+          "name": "semestre_atual",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "periodo_entrada",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_alunos_matricula ON alunos (matricula)",
+        "CREATE INDEX idx_alunos_nome ON alunos (nome)",
+        "CREATE INDEX idx_alunos_turno ON alunos (turno)",
+        "CREATE INDEX idx_alunos_periodo ON alunos (periodo_entrada)",
+        "CREATE INDEX idx_alunos_semestre ON alunos (semestre_atual)"
+      ]
+    },
+    {
+      "name": "lancamentos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "aluno_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "alunos"
+        },
+        {
+          "name": "categoria_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "categorias"
+        },
+        {
+          "name": "data_lancamento",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "semestre_letivo_atividade",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "horas_aceitas",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "comprovante_ok",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "relatorio_ok",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_lancamentos_aluno_cat ON lancamentos (aluno_id, categoria_id)",
+        "CREATE INDEX idx_lancamentos_created ON lancamentos (created)",
+        "CREATE INDEX idx_lancamentos_semestre ON lancamentos (semestre_letivo_atividade)"
+      ]
+    }
+  ]
+}
