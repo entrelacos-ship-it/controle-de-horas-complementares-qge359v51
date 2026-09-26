@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { listarAlunos } from '@/services/alunos'
 import { listarCategorias } from '@/services/categorias'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
-import { listarLancamentosPorAluno, criarLancamento } from '@/services/lancamentos'
+import { listarLancamentosPorAluno } from '@/services/lancamentos'
+import { useApp } from '@/contexts/AppContext'
 import {
   calcularHorasCategoria,
   isCategoriaBloqueada,
@@ -42,12 +43,25 @@ import { useToast } from '@/hooks/use-toast'
 
 export default function LancamentoRapido() {
   const { toast } = useToast()
+  const appContext = useApp()
 
   // Dados globais
-  const [alunos, setAlunos] = useState<Aluno[]>([])
-  const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
-  const [loadingInitial, setLoadingInitial] = useState(true)
+  const [alunos, setAlunos] = useState<Aluno[]>(appContext.alunos)
+  const [categorias, setCategorias] = useState<Categoria[]>(appContext.categorias)
+  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(appContext.config)
+  const [loadingInitial, setLoadingInitial] = useState(appContext.loading)
+
+  useEffect(() => {
+    if (appContext.alunos.length > 0) setAlunos(appContext.alunos)
+    if (appContext.categorias.length > 0) setCategorias(appContext.categorias)
+    if (appContext.config) {
+      setConfig(appContext.config)
+      if (appContext.config.semestre_letivo_atual) {
+        setSemestreAtividade(appContext.config.semestre_letivo_atual)
+      }
+    }
+    setLoadingInitial(appContext.loading)
+  }, [appContext.alunos, appContext.categorias, appContext.config, appContext.loading])
 
   // Passo 1: Seleção do Estudante
   const [searchQuery, setSearchQuery] = useState('')
@@ -242,7 +256,8 @@ export default function LancamentoRapido() {
     try {
       setSubmitting(true)
 
-      const novoLancamento = await criarLancamento({
+      // Muta no backend E sincroniza backup local imediatamente via AppContext
+      const novoLancamento = await appContext.criarLancamento({
         aluno_id: selectedAluno.id,
         categoria_id: catSelecionada.id,
         data_lancamento: new Date(dataAtividade).toISOString(),

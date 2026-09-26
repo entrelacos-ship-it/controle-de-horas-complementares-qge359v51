@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { listarAlunos, promoverTodosAlunos } from '@/services/alunos'
+import { listarAlunos } from '@/services/alunos'
 import { listarTodosLancamentos } from '@/services/lancamentos'
 import { listarCategorias } from '@/services/categorias'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
+import { useApp } from '@/contexts/AppContext'
 import type { Aluno, Lancamento, Categoria, ConfiguracaoGlobal } from '@/types'
 import { TurmaVisualizacaoGraficos } from '@/components/TurmaVisualizacaoGraficos'
 import {
@@ -55,12 +56,27 @@ import { useToast } from '@/hooks/use-toast'
 
 export default function Turmas() {
   const { toast } = useToast()
+  const appContext = useApp()
 
-  const [alunos, setAlunos] = useState<Aluno[]>([])
-  const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
-  const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [alunos, setAlunos] = useState<Aluno[]>(appContext.alunos)
+  const [lancamentos, setLancamentos] = useState<Lancamento[]>(appContext.lancamentos)
+  const [categorias, setCategorias] = useState<Categoria[]>(appContext.categorias)
+  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(appContext.config)
+  const [loading, setLoading] = useState(appContext.loading)
+
+  useEffect(() => {
+    if (appContext.alunos.length > 0) setAlunos(appContext.alunos)
+    if (appContext.lancamentos.length > 0) setLancamentos(appContext.lancamentos)
+    if (appContext.categorias.length > 0) setCategorias(appContext.categorias)
+    if (appContext.config) setConfig(appContext.config)
+    setLoading(appContext.loading)
+  }, [
+    appContext.alunos,
+    appContext.lancamentos,
+    appContext.categorias,
+    appContext.config,
+    appContext.loading,
+  ])
 
   // Filtros combinados
   const [filtroEntrada, setFiltroEntrada] = useState('Todas')
@@ -349,7 +365,7 @@ export default function Turmas() {
   const handlePromoverSemestres = async () => {
     try {
       setPromovendo(true)
-      const count = await promoverTodosAlunos()
+      const count = await appContext.promoverTodosAlunos()
       toast({
         title: 'Promoção semestral realizada!',
         description: `${count} alunos avançaram de semestre. Alunos no 10º permaneceram no 10º.`,

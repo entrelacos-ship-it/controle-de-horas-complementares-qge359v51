@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { useApp } from '@/contexts/AppContext'
 import {
   GraduationCap,
   LayoutDashboard,
@@ -16,17 +17,61 @@ import {
   AlertTriangle,
   MailCheck,
   Loader2,
+  Database,
+  WifiOff,
+  RefreshCw,
+  HardDriveDownload,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
 export default function Layout() {
   const { user, logout, requestVerification } = useAuth()
+  const {
+    isOfflineMode,
+    offlineLoadedAt,
+    ultimoBackupSalvoEm,
+    recarregarDados,
+    forcarBackupLocal,
+  } = useApp()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [resendingVerification, setResendingVerification] = useState(false)
   const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null)
+  const [tentandoReconectar, setTentandoReconectar] = useState(false)
+  const [backupManualFeedback, setBackupManualFeedback] = useState(false)
+
+  const handleTentarReconectar = async () => {
+    try {
+      setTentandoReconectar(true)
+      await recarregarDados()
+    } finally {
+      setTentandoReconectar(false)
+    }
+  }
+
+  const handleForcarBackupManual = () => {
+    const ok = forcarBackupLocal()
+    if (ok) {
+      setBackupManualFeedback(true)
+      setTimeout(() => setBackupManualFeedback(false), 2000)
+    }
+  }
+
+  const formatarHoraBackup = (isoString?: string | null) => {
+    if (!isoString) return 'nenhum'
+    try {
+      const d = new Date(isoString)
+      return d.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    } catch {
+      return 'recente'
+    }
+  }
 
   const handleResendVerification = async () => {
     if (!user?.email || resendingVerification) return
@@ -134,7 +179,7 @@ export default function Layout() {
                   {user.name}
                 </span>
                 <span className="truncate text-[11px] text-slate-300">{user.email}</span>
-                <div className="mt-1">
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                   <Badge
                     variant="secondary"
                     className={`text-[10px] py-0 px-1.5 h-4 font-normal ${
@@ -146,6 +191,21 @@ export default function Layout() {
                     <ShieldCheck className="mr-1 h-2.5 w-2.5" />
                     {user.role || 'Coordenador'}
                   </Badge>
+                  {/* Status indicador discreto do backup local no perfil da sidebar */}
+                  <span
+                    title={
+                      ultimoBackupSalvoEm
+                        ? `Backup local ativo (salvo às ${formatarHoraBackup(ultimoBackupSalvoEm)})`
+                        : 'Backup local aguardando dados'
+                    }
+                    className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                    onClick={handleForcarBackupManual}
+                  >
+                    <Database className="h-2.5 w-2.5 text-blue-400" />
+                    <span>
+                      {backupManualFeedback ? 'Salvo!' : formatarHoraBackup(ultimoBackupSalvoEm)}
+                    </span>
+                  </span>
                 </div>
               </div>
               <button
@@ -284,6 +344,44 @@ export default function Layout() {
             MAIN CONTENT AREA
            ======================================================== */}
         <main className="flex-1">
+          {/* Banner de Modo Offline / Resiliência por LocalStorage */}
+          {isOfflineMode && (
+            <div className="border-b border-amber-300 bg-amber-100/90 px-4 py-2 text-xs text-amber-950 shadow-xs backdrop-blur-xs">
+              <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 sm:px-6 lg:px-8">
+                <div className="flex items-center gap-2">
+                  <WifiOff className="h-4 w-4 shrink-0 text-amber-700" />
+                  <span>
+                    <strong>Modo offline:</strong> exibindo dados do último salvamento local (
+                    {formatarHoraBackup(offlineLoadedAt)}). Modo leitura temporário a partir do
+                    cache local.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTentarReconectar}
+                    disabled={tentandoReconectar}
+                    className="h-6 border-amber-400 bg-white px-2 text-[11px] font-semibold text-amber-900 hover:bg-amber-50"
+                  >
+                    {tentandoReconectar ? (
+                      <>
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        Reconectando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-1 h-3 w-3" />
+                        Tentar reconectar
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Banner discreto e não bloqueante de verificação pendente */}
           {user && user.verified === false && (
             <div className="border-b border-amber-200 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 shadow-xs backdrop-blur-xs">
@@ -329,11 +427,33 @@ export default function Layout() {
           </div>
         </main>
 
-        {/* Slim institutional footer */}
-        <footer className="border-t border-slate-200 bg-[#e2e8f0] py-3 text-center text-xs text-slate-600">
-          <div className="mx-auto max-w-7xl px-4">
-            © 2026 Coordenação do Curso de Psicologia — FAUSP · Prof.ª Roberta Andrea de Oliveira
-            (CRP 06/77114)
+        {/* Slim institutional footer com indicador de confiança de backup local */}
+        <footer className="border-t border-slate-200 bg-[#e2e8f0] py-2.5 text-xs text-slate-600">
+          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 sm:flex-row">
+            <div>
+              © 2026 Coordenação do Curso de Psicologia — FAUSP · Prof.ª Roberta Andrea de Oliveira
+              (CRP 06/77114)
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <span className="flex items-center gap-1">
+                <Database className="h-3.5 w-3.5 text-blue-600" />
+                <span>
+                  Último backup local:{' '}
+                  <strong className="text-slate-700">
+                    {ultimoBackupSalvoEm ? formatarHoraBackup(ultimoBackupSalvoEm) : 'Iniciando...'}
+                  </strong>
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={handleForcarBackupManual}
+                title="Forçar salvamento imediato no localStorage"
+                className="text-[10px] text-blue-700 hover:underline inline-flex items-center gap-0.5 ml-1"
+              >
+                <HardDriveDownload className="h-3 w-3" />
+                <span>{backupManualFeedback ? 'Salvo!' : 'Salvar agora'}</span>
+              </button>
+            </div>
           </div>
         </footer>
       </div>

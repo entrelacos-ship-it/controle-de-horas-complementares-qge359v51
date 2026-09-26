@@ -1,12 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { getConfiguracaoGlobal, salvarConfiguracaoGlobal } from '@/services/configuracao'
-import {
-  listarCategorias,
-  criarCategoria,
-  atualizarCategoria,
-  excluirCategoria,
-} from '@/services/categorias'
+import { useApp } from '@/contexts/AppContext'
+import { getConfiguracaoGlobal } from '@/services/configuracao'
+import { listarCategorias } from '@/services/categorias'
 import { contarLancamentosPorCategoria } from '@/services/lancamentos'
 import {
   exportarBackupCompleto,
@@ -42,11 +38,7 @@ import {
   FileJson,
   FileCheck,
 } from 'lucide-react'
-import {
-  listarAlunos,
-  executarViradaSemestreAssistida,
-  ResultadoViradaSemestre,
-} from '@/services/alunos'
+import { listarAlunos, ResultadoViradaSemestre } from '@/services/alunos'
 import type { Aluno } from '@/types'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
@@ -78,13 +70,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useToast } from '@/hooks/use-toast'
 
 export default function ConfiguracoesNDE() {
-  const { isAdmin } = useAuth()
   const { toast } = useToast()
+  const { isAdmin } = useAuth()
+  const appContext = useApp()
 
-  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
-  const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [loading, setLoading] = useState(true)
+  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(appContext.config)
+  const [categorias, setCategorias] = useState<Categoria[]>(appContext.categorias)
+  const [loading, setLoading] = useState(appContext.loading)
 
+  useEffect(() => {
+    if (appContext.config) setConfig(appContext.config)
+    if (appContext.categorias.length > 0) setCategorias(appContext.categorias)
+    setLoading(appContext.loading)
+  }, [appContext.config, appContext.categorias, appContext.loading])
   // Form Global Config (Semestre, Mínimo, Meta, Coordenadora, CRP)
   const [semestreLetivo, setSemestreLetivo] = useState('2026.2')
   const [minimoSemestral, setMinimoSemestral] = useState(20)
@@ -185,7 +183,7 @@ export default function ConfiguracoesNDE() {
     try {
       setSalvandoConfig(true)
       const id = config?.id || ''
-      const updated = await salvarConfiguracaoGlobal(id, {
+      const updated = await appContext.salvarConfiguracao(id, {
         semestre_letivo_atual: semestreLetivo.trim(),
         minimo_exigido_semestre: Number(minimoSemestral),
         meta_curso: Number(metaCurso),
@@ -370,7 +368,7 @@ export default function ConfiguracoesNDE() {
     try {
       setSalvandoCat(true)
       if (editingCatId) {
-        await atualizarCategoria(editingCatId, {
+        await appContext.atualizarCategoria(editingCatId, {
           nome: catNome.trim(),
           regra_horas_unitaria: catRegra.trim(),
           teto_maximo_curso: Number(catTeto),
@@ -381,7 +379,7 @@ export default function ConfiguracoesNDE() {
           description: `Alterações em "${catNome}" salvas com sucesso.`,
         })
       } else {
-        await criarCategoria({
+        await appContext.criarCategoria({
           nome: catNome.trim(),
           regra_horas_unitaria: catRegra.trim(),
           teto_maximo_curso: Number(catTeto),
@@ -414,7 +412,7 @@ export default function ConfiguracoesNDE() {
     }
 
     try {
-      await atualizarCategoria(c.id, { ativo: !c.ativo })
+      await appContext.atualizarCategoria(c.id, { ativo: !c.ativo })
       toast({
         title: !c.ativo ? 'Categoria reativada' : 'Categoria inativada',
         description: !c.ativo
@@ -534,7 +532,7 @@ export default function ConfiguracoesNDE() {
     setErroExecucaoVirada(null)
 
     try {
-      const resultado = await executarViradaSemestreAssistida({
+      const resultado = await appContext.executarViradaSemestreAssistida({
         novoSemestreLetivo: novoSemestre,
         idsAlunosParaPromover: Array.from(idsAlunosSelecionados),
         onProgress: (pct, atual, total) => {
@@ -585,7 +583,7 @@ export default function ConfiguracoesNDE() {
   const handleExcluirCategoria = async () => {
     if (!deletingCat || !isAdmin) return
     try {
-      await excluirCategoria(deletingCat.id)
+      await appContext.excluirCategoria(deletingCat.id)
       toast({
         title: 'Categoria excluída!',
         description: `"${deletingCat.nome}" foi removida do regulamento.`,

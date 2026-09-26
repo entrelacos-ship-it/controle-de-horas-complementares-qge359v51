@@ -7,6 +7,7 @@ import {
 import { gerarTextoDespacho } from './formatadorDespacho'
 import { executarTestesImportacao } from './importacaoPlanilha.test'
 import { executarTestesAuth } from './authValidations.test'
+import { executarTestesLocalStorageBackup } from './localStorageBackup.test'
 import { sanitizarNomeColunaCategoria, gerarLinhasDadosCsv } from './exportacaoTurma'
 import {
   obterNomeArquivoRelatorioAluno,
@@ -212,6 +213,10 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
   // Executar a suíte de validações de autenticação e e-mail
   const testesAuth = executarTestesAuth()
   resultados.push(...testesAuth.resultados)
+
+  // Executar a suíte de persistência e resiliência com localStorage (CT-BK-01 a CT-BK-07)
+  const testesBackup = executarTestesLocalStorageBackup()
+  resultados.push(...testesBackup.resultados)
 
   // CT-07: Exportação de dados brutos CSV (flat)
   const sanitizado1 = sanitizarNomeColunaCategoria('Eventos científicos com apresentação')

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { useApp } from '@/contexts/AppContext'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
 import { listarCategorias } from '@/services/categorias'
 import { listarAlunos } from '@/services/alunos'
@@ -28,16 +29,40 @@ import { Button } from '@/components/ui/button'
 
 export default function Index() {
   const { user } = useAuth()
-  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
-  const [alunos, setAlunos] = useState<Aluno[]>([])
-  const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
+  const appContext = useApp()
+  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(appContext.config)
+  const [alunos, setAlunos] = useState<Aluno[]>(appContext.alunos)
+  const [categorias, setCategorias] = useState<Categoria[]>(appContext.categorias)
+  const [lancamentos, setLancamentos] = useState<Lancamento[]>(appContext.lancamentos)
   const [recentes, setRecentes] = useState<Lancamento[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(appContext.loading)
+
+  // Sincroniza com o AppContext quando este atualizar
+  useEffect(() => {
+    if (appContext.config) setConfig(appContext.config)
+    if (appContext.alunos.length > 0) setAlunos(appContext.alunos)
+    if (appContext.categorias.length > 0) setCategorias(appContext.categorias)
+    if (appContext.lancamentos.length > 0) {
+      setLancamentos(appContext.lancamentos)
+      setRecentes(appContext.lancamentos.slice(0, 5))
+    }
+    setLoading(appContext.loading)
+  }, [
+    appContext.config,
+    appContext.alunos,
+    appContext.categorias,
+    appContext.lancamentos,
+    appContext.loading,
+  ])
 
   useEffect(() => {
     async function loadData() {
       try {
+        // Se o AppContext já tiver os dados carregados, apenas puxa recentes caso necessário
+        if (appContext.lancamentos.length > 0) {
+          setRecentes(appContext.lancamentos.slice(0, 5))
+          return
+        }
         setLoading(true)
         const [cfg, als, cats, allLancs, recs] = await Promise.all([
           getConfiguracaoGlobal(),
@@ -53,12 +78,16 @@ export default function Index() {
         setRecentes(recs)
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err)
+        // Fallback: usar dados do AppContext se disponíveis
+        if (appContext.lancamentos.length > 0) {
+          setRecentes(appContext.lancamentos.slice(0, 5))
+        }
       } finally {
         setLoading(false)
       }
     }
     loadData()
-  }, [])
+  }, [appContext.lancamentos])
 
   // Métricas
   const totalAlunos = alunos.length

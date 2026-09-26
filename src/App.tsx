@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { AppProvider } from '@/contexts/AppContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import Layout from '@/components/Layout'
 
@@ -25,41 +26,43 @@ import NotFound from '@/pages/NotFound'
 const App = () => (
   <BrowserRouter>
     <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <Routes>
-          {/* Public Auth Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/esqueci-senha" element={<ForgotPassword />} />
-          <Route path="/forgot-password" element={<Navigate to="/esqueci-senha" replace />} />
-          <Route path="/redefinir-senha" element={<ResetPassword />} />
-          <Route path="/reset-password" element={<Navigate to="/redefinir-senha" replace />} />
-          <Route path="/verificar-email" element={<VerifyEmail />} />
-          <Route path="/verify-email" element={<Navigate to="/verificar-email" replace />} />
-          <Route path="/confirm-email-change" element={<ConfirmEmailChange />} />
+      <AppProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <Routes>
+            {/* Public Auth Routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/esqueci-senha" element={<ForgotPassword />} />
+            <Route path="/forgot-password" element={<Navigate to="/esqueci-senha" replace />} />
+            <Route path="/redefinir-senha" element={<ResetPassword />} />
+            <Route path="/reset-password" element={<Navigate to="/redefinir-senha" replace />} />
+            <Route path="/verificar-email" element={<VerifyEmail />} />
+            <Route path="/verify-email" element={<Navigate to="/verificar-email" replace />} />
+            <Route path="/confirm-email-change" element={<ConfirmEmailChange />} />
 
-          {/* Protected Main System Routes */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/" element={<Index />} />
-            <Route path="/lancamento" element={<LancamentoRapido />} />
-            <Route path="/alunos" element={<AlunosList />} />
-            <Route path="/alunos/:id" element={<AlunoIndividual />} />
-            <Route path="/turmas" element={<Turmas />} />
-            <Route path="/importacao" element={<Importacao />} />
-            <Route path="/configuracoes" element={<ConfiguracoesNDE />} />
-          </Route>
+            {/* Protected Main System Routes */}
+            <Route
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/" element={<Index />} />
+              <Route path="/lancamento" element={<LancamentoRapido />} />
+              <Route path="/alunos" element={<AlunosList />} />
+              <Route path="/alunos/:id" element={<AlunoIndividual />} />
+              <Route path="/turmas" element={<Turmas />} />
+              <Route path="/importacao" element={<Importacao />} />
+              <Route path="/configuracoes" element={<ConfiguracoesNDE />} />
+            </Route>
 
-          {/* Fallback 404 */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </TooltipProvider>
+            {/* Fallback 404 */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </TooltipProvider>
+      </AppProvider>
     </AuthProvider>
   </BrowserRouter>
 )

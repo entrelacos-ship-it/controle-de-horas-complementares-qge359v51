@@ -1,12 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  listarAlunos,
-  criarAluno,
-  atualizarAluno,
-  executarViradaSemestreAssistida,
-  ResultadoViradaSemestre,
-} from '@/services/alunos'
+import { listarAlunos, ResultadoViradaSemestre } from '@/services/alunos'
+import { useApp } from '@/contexts/AppContext'
 import { listarTodosLancamentos } from '@/services/lancamentos'
 import { listarCategorias } from '@/services/categorias'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
@@ -71,12 +66,27 @@ function validarFormatoSemestre(s: string): boolean {
 export default function AlunosList() {
   const { toast } = useToast()
   const navigate = useNavigate()
+  const appContext = useApp()
 
-  const [alunos, setAlunos] = useState<Aluno[]>([])
-  const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
-  const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [alunos, setAlunos] = useState<Aluno[]>(appContext.alunos)
+  const [lancamentos, setLancamentos] = useState<Lancamento[]>(appContext.lancamentos)
+  const [categorias, setCategorias] = useState<Categoria[]>(appContext.categorias)
+  const [config, setConfig] = useState<ConfiguracaoGlobal | null>(appContext.config)
+  const [loading, setLoading] = useState(appContext.loading)
+
+  useEffect(() => {
+    if (appContext.alunos.length > 0) setAlunos(appContext.alunos)
+    if (appContext.lancamentos.length > 0) setLancamentos(appContext.lancamentos)
+    if (appContext.categorias.length > 0) setCategorias(appContext.categorias)
+    if (appContext.config) setConfig(appContext.config)
+    setLoading(appContext.loading)
+  }, [
+    appContext.alunos,
+    appContext.lancamentos,
+    appContext.categorias,
+    appContext.config,
+    appContext.loading,
+  ])
   const [alunoBaixandoPdfId, setAlunoBaixandoPdfId] = useState<string | null>(null)
 
   // Filtros
@@ -264,7 +274,7 @@ export default function AlunosList() {
     try {
       setSalvandoAluno(true)
       if (editingAlunoId) {
-        await atualizarAluno(editingAlunoId, {
+        await appContext.atualizarAluno(editingAlunoId, {
           nome: nomeClean,
           matricula: matriculaClean,
           turno: alunoTurno,
@@ -277,7 +287,7 @@ export default function AlunosList() {
           description: `Matrícula ${matriculaClean} (${nomeClean}) salva com sucesso.`,
         })
       } else {
-        await criarAluno({
+        await appContext.criarAluno({
           nome: nomeClean,
           matricula: matriculaClean,
           turno: alunoTurno,
@@ -370,7 +380,7 @@ export default function AlunosList() {
     setErroExecucaoPromocao(null)
 
     try {
-      const resultado = await executarViradaSemestreAssistida({
+      const resultado = await appContext.executarViradaSemestreAssistida({
         novoSemestreLetivo: novoSemestre,
         idsAlunosParaPromover: Array.from(idsAlunosSelecionados),
         onProgress: (pct, atual, total) => {
