@@ -1,16 +1,34 @@
 import React, { useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
-import pb from '@/lib/pocketbase/client'
-import { GraduationCap, Lock, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { GraduationCap, Lock, AlertCircle, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
+export function validarFormularioRedefinicao(
+  token: string,
+  pass: string,
+  passConf: string,
+): { valido: boolean; erro?: string } {
+  if (!token || !token.trim()) {
+    return { valido: false, erro: 'Token de recuperação ausente ou inválido no link.' }
+  }
+  if (!pass || pass.length < 8) {
+    return { valido: false, erro: 'A nova senha deve possuir pelo menos 8 caracteres.' }
+  }
+  if (pass !== passConf) {
+    return { valido: false, erro: 'As senhas informadas não são iguais.' }
+  }
+  return { valido: true }
+}
+
 export default function ResetPassword() {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') || ''
   const navigate = useNavigate()
+  const { confirmPasswordReset } = useAuth()
 
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
@@ -22,31 +40,32 @@ export default function ResetPassword() {
     e.preventDefault()
     setError(null)
 
-    if (!token) {
-      setError('Token de recuperação inválido ou ausente na URL.')
-      return
-    }
-
-    if (password.length < 8) {
-      setError('A nova senha deve possuir pelo menos 8 caracteres.')
-      return
-    }
-
-    if (password !== passwordConfirm) {
-      setError('As senhas não coincidem.')
+    const validacao = validarFormularioRedefinicao(token, password, passwordConfirm)
+    if (!validacao.valido) {
+      setError(validacao.erro || 'Dados inválidos')
       return
     }
 
     setIsLoading(true)
     try {
-      await pb.collection('users').confirmPasswordReset(token, password, passwordConfirm)
+      const { error: resetErr } = await confirmPasswordReset(token, password)
+      if (resetErr) {
+        throw resetErr
+      }
       setSuccess(true)
       setTimeout(() => {
-        navigate('/login')
-      }, 2500)
+        navigate('/login', {
+          replace: true,
+          state: {
+            message: 'Senha redefinida com sucesso. Faça login com suas novas credenciais.',
+          },
+        })
+      }, 2000)
     } catch (err: unknown) {
-      console.error(err)
-      setError('Não foi possível redefinir a senha. O link pode ter expirado.')
+      console.error('Erro na confirmação de redefinição:', err)
+      setError(
+        'Não foi possível redefinir a senha. O link pode estar expirado ou já ter sido utilizado.',
+      )
     } finally {
       setIsLoading(false)
     }
@@ -56,88 +75,143 @@ export default function ResetPassword() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-[#0f2b48] via-[#16385c] to-[#0a1e33] p-4 text-slate-100">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-xl ring-4 ring-white/10">
-            <GraduationCap className="h-8 w-8" />
+          <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-xl ring-4 ring-white/10">
+            <GraduationCap className="h-10 w-10" />
           </div>
-          <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-white">
-            Criar Nova Senha
+          <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            Controle de Horas
           </h1>
+          <p className="mt-1 text-sm text-slate-300">Coordenação do Curso de Psicologia — FAUSP</p>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white p-6 shadow-2xl text-slate-900 sm:p-8">
           {success ? (
-            <div className="space-y-4 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
+            <div className="space-y-4 text-center py-2">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                 <CheckCircle2 className="h-6 w-6" />
               </div>
-              <h2 className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
+              <h2 className="font-['Outfit'] text-xl font-bold text-[#0f2b48]">
                 Senha Alterada com Sucesso!
               </h2>
-              <p className="text-xs text-slate-600">Redirecionando para o login em instantes...</p>
-              <Link to="/login" className="inline-block pt-2">
-                <Button className="w-full bg-[#1d4ed8] text-xs">Ir para o Login Agora</Button>
-              </Link>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Sua credencial de acesso foi atualizada. Redirecionando para a tela de login...
+              </p>
+              <div className="pt-2">
+                <Link
+                  to="/login"
+                  state={{
+                    message: 'Senha redefinida com sucesso. Faça login com suas novas credenciais.',
+                  }}
+                  className="inline-block w-full"
+                >
+                  <Button className="w-full bg-[#1d4ed8] text-white hover:bg-[#1e40af] text-xs">
+                    Entrar Agora
+                  </Button>
+                </Link>
+              </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <>
+              <div className="mb-5">
+                <h2 className="font-['Outfit'] text-xl font-bold text-[#0f2b48]">
+                  Redefinir senha
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Crie uma nova senha de no mínimo 8 caracteres para a sua conta.
+                </p>
+              </div>
+
+              {!token && (
+                <Alert
+                  variant="destructive"
+                  className="mb-5 border-amber-200 bg-amber-50 text-amber-900"
+                >
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-xs font-medium">
+                    Link de redefinição incompleto ou sem token. Solicite um novo link se
+                    necessário.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {error && (
-                <Alert variant="destructive" className="border-red-200 bg-red-50 text-red-900">
+                <Alert variant="destructive" className="mb-5 border-red-200 bg-red-50 text-red-900">
                   <AlertCircle className="h-4 w-4 text-red-600" />
                   <AlertDescription className="text-xs font-medium">{error}</AlertDescription>
                 </Alert>
               )}
 
-              <div className="space-y-1.5">
-                <Label htmlFor="pass" className="text-xs font-semibold text-slate-700">
-                  Nova Senha (mínimo 8 caracteres)
-                </Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="pass"
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-9 text-sm"
-                  />
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pass" className="text-xs font-semibold text-slate-700">
+                    Nova Senha
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="pass"
+                      type="password"
+                      autoComplete="new-password"
+                      required
+                      placeholder="Mínimo 8 caracteres"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-9 text-sm"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="passConf" className="text-xs font-semibold text-slate-700">
-                  Confirmação da Nova Senha
-                </Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="passConf"
-                    type="password"
-                    required
-                    value={passwordConfirm}
-                    onChange={(e) => setPasswordConfirm(e.target.value)}
-                    className="pl-9 text-sm"
-                  />
+                <div className="space-y-1.5">
+                  <Label htmlFor="passConf" className="text-xs font-semibold text-slate-700">
+                    Confirmar Nova Senha
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="passConf"
+                      type="password"
+                      autoComplete="new-password"
+                      required
+                      placeholder="Repita a nova senha"
+                      value={passwordConfirm}
+                      onChange={(e) => setPasswordConfirm(e.target.value)}
+                      className="pl-9 text-sm"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-[#1d4ed8] text-white hover:bg-[#1e40af]"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  'Salvar Nova Senha'
-                )}
-              </Button>
-            </form>
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-[#1d4ed8] text-white hover:bg-[#1e40af] transition-colors"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Redefinindo senha...
+                    </>
+                  ) : (
+                    'Salvar Nova Senha'
+                  )}
+                </Button>
+              </form>
+
+              <div className="mt-5 text-center border-t border-slate-100 pt-4">
+                <Link
+                  to="/esqueci-senha"
+                  className="inline-flex items-center text-xs text-slate-600 hover:text-slate-900 transition-colors"
+                >
+                  <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                  Solicitar novo link de redefinição
+                </Link>
+              </div>
+            </>
           )}
         </div>
+
+        <p className="mt-4 text-center text-xs text-slate-400">
+          Acesso restrito à coordenação do curso de Psicologia.
+        </p>
       </div>
     </div>
   )

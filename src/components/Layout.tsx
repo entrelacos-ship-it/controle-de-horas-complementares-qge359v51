@@ -13,14 +13,35 @@ import {
   Menu,
   X,
   ShieldCheck,
+  AlertTriangle,
+  MailCheck,
+  Loader2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 export default function Layout() {
-  const { user, logout } = useAuth()
+  const { user, logout, requestVerification } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [resendingVerification, setResendingVerification] = useState(false)
+  const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null)
+
+  const handleResendVerification = async () => {
+    if (!user?.email || resendingVerification) return
+    setResendingVerification(true)
+    setVerificationFeedback(null)
+    try {
+      await requestVerification(user.email)
+      setVerificationFeedback('E-mail de verificação enviado! Confira sua caixa de entrada.')
+    } catch (err: unknown) {
+      console.error('Erro ao reenviar verificação:', err)
+      setVerificationFeedback('Não foi possível reenviar agora. Tente novamente mais tarde.')
+    } finally {
+      setResendingVerification(false)
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -263,6 +284,46 @@ export default function Layout() {
             MAIN CONTENT AREA
            ======================================================== */}
         <main className="flex-1">
+          {/* Banner discreto e não bloqueante de verificação pendente */}
+          {user && user.verified === false && (
+            <div className="border-b border-amber-200 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 shadow-xs backdrop-blur-xs">
+              <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 sm:px-6 lg:px-8">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                  <span>
+                    Seu endereço de e-mail <strong>({user.email})</strong> ainda não foi verificado.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {verificationFeedback ? (
+                    <span className="flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      <MailCheck className="h-3.5 w-3.5" />
+                      {verificationFeedback}
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResendVerification}
+                      disabled={resendingVerification}
+                      className="h-7 border-amber-300 bg-white text-xs font-semibold text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+                    >
+                      {resendingVerification ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                          Reenviando...
+                        </>
+                      ) : (
+                        'Reenviar verificação'
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
             <Outlet />
           </div>

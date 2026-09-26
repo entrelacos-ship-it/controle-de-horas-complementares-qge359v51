@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { GraduationCap, Lock, Mail, AlertCircle, Loader2 } from 'lucide-react'
+import { GraduationCap, Lock, Mail, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +16,7 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
+  const successMessage = (location.state as { message?: string })?.message || null
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/'
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,6 +65,13 @@ export default function Login() {
             </p>
           </div>
 
+          {successMessage && (
+            <Alert className="mb-5 border-emerald-200 bg-emerald-50 text-emerald-900">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <AlertDescription className="text-xs font-medium">{successMessage}</AlertDescription>
+            </Alert>
+          )}
+
           {error && (
             <Alert variant="destructive" className="mb-5 border-red-200 bg-red-50 text-red-900">
               <AlertCircle className="h-4 w-4 text-red-600" />
@@ -96,7 +104,10 @@ export default function Login() {
                 <Label htmlFor="password" className="text-xs font-semibold text-slate-700">
                   Senha
                 </Label>
-                <Link to="/forgot-password" className="text-xs text-[#1d4ed8] hover:underline">
+                <Link
+                  to="/esqueci-senha"
+                  className="text-xs text-[#1d4ed8] hover:underline font-medium"
+                >
                   Esqueceu a senha?
                 </Link>
               </div>
@@ -129,6 +140,15 @@ export default function Login() {
                 'Entrar no Sistema'
               )}
             </Button>
+
+            <div className="pt-1 text-center">
+              <Link
+                to="/esqueci-senha"
+                className="text-xs text-[#1d4ed8] hover:underline font-medium"
+              >
+                Esqueci minha senha
+              </Link>
+            </div>
           </form>
 
           {/* Seed demo quick links */}

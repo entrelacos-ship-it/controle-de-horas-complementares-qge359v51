@@ -6,6 +6,7 @@ import {
 } from './calculoHoras'
 import { gerarTextoDespacho } from './formatadorDespacho'
 import { executarTestesImportacao } from './importacaoPlanilha.test'
+import { executarTestesAuth } from './authValidations.test'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '../types'
 
 /**
@@ -201,6 +202,10 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
   // Executar também a suíte de importação de planilha
   const testesImportacao = executarTestesImportacao()
   resultados.push(...testesImportacao.resultados)
+
+  // Executar a suíte de validações de autenticação e e-mail
+  const testesAuth = executarTestesAuth()
+  resultados.push(...testesAuth.resultados)
 
   return { todosPassaram: true, resultados }
 }

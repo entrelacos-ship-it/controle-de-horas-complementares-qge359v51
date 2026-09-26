@@ -31,9 +31,12 @@ const App = () => (
         <Routes>
           {/* Public Auth Routes */}
           <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/esqueci-senha" element={<ForgotPassword />} />
+          <Route path="/forgot-password" element={<Navigate to="/esqueci-senha" replace />} />
+          <Route path="/redefinir-senha" element={<ResetPassword />} />
+          <Route path="/reset-password" element={<Navigate to="/redefinir-senha" replace />} />
+          <Route path="/verificar-email" element={<VerifyEmail />} />
+          <Route path="/verify-email" element={<Navigate to="/verificar-email" replace />} />
           <Route path="/confirm-email-change" element={<ConfirmEmailChange />} />
 
           {/* Protected Main System Routes */}
