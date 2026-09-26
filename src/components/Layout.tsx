@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useApp } from '@/contexts/AppContext'
@@ -20,10 +20,23 @@ import {
   WifiOff,
   RefreshCw,
   HardDriveDownload,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react'
 import { LogoFausp } from '@/components/LogoFausp'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'fausp_sidebar_collapsed'
 
 export default function Layout() {
   const { user, logout, requestVerification } = useAuth()
@@ -37,10 +50,31 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+      return stored ? JSON.parse(stored) === true : false
+    } catch {
+      return false
+    }
+  })
   const [resendingVerification, setResendingVerification] = useState(false)
   const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null)
   const [tentandoReconectar, setTentandoReconectar] = useState(false)
   const [backupManualFeedback, setBackupManualFeedback] = useState(false)
+
+  // Persistir estado de recolhimento no localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, JSON.stringify(isCollapsed))
+    } catch {
+      // Ignora erro de cota ou storage bloqueado
+    }
+  }, [isCollapsed])
+
+  const toggleSidebar = () => {
+    setIsCollapsed((prev) => !prev)
+  }
 
   const handleTentarReconectar = async () => {
     try {
@@ -113,27 +147,106 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-[#f8fafc] text-[#0f172a]">
       {/* ========================================================
-          DESKTOP SIDEBAR (fixa à esquerda, ~260px, fundo navy #0f2b48)
+          DESKTOP SIDEBAR (fixa à esquerda, recolhível ~76px / ~260px, fundo navy #0f2b48)
          ======================================================== */}
-      <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 z-40 bg-[#0f2b48] text-white shadow-xl border-r border-[#1a3d61]">
-        {/* Brand / Logo Topo */}
-        <div className="flex h-20 shrink-0 items-center px-5 border-b border-[#1b3e63]/70">
-          <NavLink to="/" className="flex items-center gap-3 transition-opacity hover:opacity-95">
-            <LogoFausp variant="circular" theme="dark" size="md" className="h-11 w-11" />
-            <div className="flex flex-col overflow-hidden">
-              <span className="font-['Outfit'] text-[15px] font-bold leading-tight tracking-tight text-white line-clamp-2">
-                Horas Complementares
+      <aside
+        className={`hidden md:flex md:flex-col md:fixed md:inset-y-0 z-40 bg-[#0f2b48] text-white shadow-2xl border-r border-[#1a3d61] transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'md:w-[76px]' : 'md:w-[260px]'
+        }`}
+        aria-label="Menu Lateral Principal"
+      >
+        {/* ========================================================
+            BOTÃO PREMIUM FLUTUANTE DE COLAPSO / EXPANSÃO
+            Posicionado sobre a borda direita da sidebar com efeito de profundidade,
+            brilho sutil e hover com elevação dourada/azul.
+           ======================================================== */}
+        <div className="absolute -right-3.5 top-6 z-50">
+          <Tooltip delayDuration={150}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                aria-label={isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+                aria-expanded={!isCollapsed}
+                className="group relative flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-b from-[#1e4a78] to-[#0d2238] text-blue-100 shadow-[0_4px_12px_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,255,255,0.18)] transition-all duration-200 hover:scale-110 hover:from-[#255c94] hover:to-[#122e4d] hover:text-white hover:shadow-[0_6px_16px_rgba(15,43,72,0.5),0_0_0_1.5px_rgba(191,219,254,0.6),0_0_12px_rgba(96,165,250,0.4)] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f2b48]"
+              >
+                {/* Anel sutil de brilho interno institucional */}
+                <span className="pointer-events-none absolute inset-[1px] rounded-full border border-white/10 group-hover:border-blue-200/30" />
+                {isCollapsed ? (
+                  <ChevronsRight className="h-3.5 w-3.5 text-blue-200 transition-transform group-hover:translate-x-0.5 group-hover:text-white" />
+                ) : (
+                  <ChevronsLeft className="h-3.5 w-3.5 text-blue-200 transition-transform group-hover:-translate-x-0.5 group-hover:text-white" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="right"
+              sideOffset={10}
+              className="bg-[#0c2238] text-white border border-[#234e78] text-xs font-medium px-2.5 py-1 shadow-xl"
+            >
+              <span className="flex items-center gap-1.5">
+                <span>{isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}</span>
+                <span className="rounded bg-white/10 px-1 py-0.2 text-[9px] font-mono text-blue-200">
+                  {isCollapsed ? 'Abrir' : 'Fechar'}
+                </span>
               </span>
-              <span className="text-[11px] font-medium text-blue-200/80">Psicologia · FAUSP</span>
-            </div>
-          </NavLink>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* Brand / Logo Topo */}
+        <div
+          className={`flex h-20 shrink-0 items-center border-b border-[#1b3e63]/70 transition-all duration-300 ${
+            isCollapsed ? 'justify-center px-2' : 'px-5'
+          }`}
+        >
+          {isCollapsed ? (
+            <Tooltip delayDuration={100}>
+              <TooltipTrigger asChild>
+                <NavLink
+                  to="/"
+                  className="flex items-center justify-center transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-xl"
+                  aria-label="Ir para a página inicial (FAUSP Horas Complementares)"
+                >
+                  <LogoFausp variant="circular" theme="dark" size="sm" className="h-10 w-10" />
+                </NavLink>
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                sideOffset={12}
+                className="bg-[#0c2238] text-white border border-[#234e78] shadow-xl text-xs"
+              >
+                <div className="flex flex-col">
+                  <span className="font-['Outfit'] font-bold text-white">Horas Complementares</span>
+                  <span className="text-[11px] text-blue-200">Psicologia · FAUSP</span>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <NavLink
+              to="/"
+              className="flex items-center gap-3 transition-opacity hover:opacity-95 overflow-hidden"
+            >
+              <LogoFausp variant="circular" theme="dark" size="md" className="h-11 w-11 shrink-0" />
+              <div className="flex flex-col min-w-0 overflow-hidden">
+                <span className="font-['Outfit'] text-[15px] font-bold leading-tight tracking-tight text-white truncate">
+                  Horas Complementares
+                </span>
+                <span className="text-[11px] font-medium text-blue-200/80 truncate">
+                  Psicologia · FAUSP
+                </span>
+              </div>
+            </NavLink>
+          )}
         </div>
 
         {/* Navigation Items (verticais com destaque do ativo) */}
-        <div className="flex-1 overflow-y-auto px-3 py-5">
-          <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400/80">
-            Menu Principal
-          </div>
+        <div className={`flex-1 overflow-y-auto py-5 ${isCollapsed ? 'px-2' : 'px-3'}`}>
+          {!isCollapsed && (
+            <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400/80 transition-opacity">
+              Menu Principal
+            </div>
+          )}
           <nav className="flex flex-col space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon
@@ -141,6 +254,46 @@ export default function Layout() {
                 item.path === '/'
                   ? location.pathname === '/'
                   : location.pathname.startsWith(item.path)
+
+              if (isCollapsed) {
+                return (
+                  <Tooltip key={item.path} delayDuration={50}>
+                    <TooltipTrigger asChild>
+                      <NavLink
+                        to={item.path}
+                        aria-label={item.label}
+                        className={`group relative flex h-11 w-full items-center justify-center rounded-xl transition-all ${
+                          isActive
+                            ? 'bg-[#1d4ed8] text-white shadow-md ring-1 ring-white/20'
+                            : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <Icon
+                          className={`h-5 w-5 shrink-0 transition-transform group-hover:scale-110 ${
+                            isActive ? 'text-white' : 'text-slate-300 group-hover:text-white'
+                          }`}
+                        />
+                        {isActive && (
+                          <span className="absolute -left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-blue-300 shadow-sm" />
+                        )}
+                      </NavLink>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="right"
+                      sideOffset={12}
+                      className="bg-[#0c2238] text-white border border-[#234e78] text-xs font-medium px-3 py-1.5 shadow-xl"
+                    >
+                      <span>{item.label}</span>
+                      {isActive && (
+                        <span className="ml-2 text-[10px] font-semibold text-blue-300">
+                          (Página Atual)
+                        </span>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                )
+              }
+
               return (
                 <NavLink
                   key={item.path}
@@ -168,54 +321,168 @@ export default function Layout() {
 
         {/* Perfil do Usuário na Base da Sidebar */}
         {user && (
-          <div className="shrink-0 border-t border-[#1b3e63]/70 bg-[#0c2238] p-3.5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1d4ed8] text-xs font-bold text-white shadow-md ring-2 ring-white/15">
-                {getInitials(user.name)}
-              </div>
-              <div className="flex flex-1 min-w-0 flex-col">
-                <span className="truncate text-xs font-semibold leading-tight text-white">
-                  {user.name}
-                </span>
-                <span className="truncate text-[11px] text-slate-300">{user.email}</span>
-                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                  <Badge
-                    variant="secondary"
-                    className={`text-[10px] py-0 px-1.5 h-4 font-normal ${
-                      user.role === 'Administrador'
-                        ? 'bg-purple-900/60 text-purple-200 border border-purple-400/30'
-                        : 'bg-blue-900/60 text-blue-200 border border-blue-400/30'
-                    }`}
+          <div
+            className={`shrink-0 border-t border-[#1b3e63]/70 bg-[#0c2238] transition-all duration-300 ${
+              isCollapsed ? 'p-2 flex flex-col items-center gap-2' : 'p-3.5'
+            }`}
+          >
+            {isCollapsed ? (
+              /* Modo Recolhido: Avatar com DropdownMenu de ações rápidas e perfil */
+              <>
+                <DropdownMenu>
+                  <Tooltip delayDuration={100}>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1d4ed8] text-xs font-bold text-white shadow-md ring-2 ring-white/20 transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          aria-label={`Perfil de ${user.name}`}
+                        >
+                          {getInitials(user.name)}
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="right"
+                      sideOffset={12}
+                      className="bg-[#0c2238] text-white border border-[#234e78] text-xs shadow-xl"
+                    >
+                      <p className="font-semibold">{user.name}</p>
+                      <p className="text-[11px] text-blue-200">{user.role || 'Coordenador'}</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <DropdownMenuContent
+                    side="right"
+                    align="end"
+                    sideOffset={14}
+                    className="w-56 bg-[#0c2238] text-white border border-[#234e78] shadow-2xl p-1.5"
                   >
-                    <ShieldCheck className="mr-1 h-2.5 w-2.5" />
-                    {user.role || 'Coordenador'}
-                  </Badge>
-                  {/* Status indicador discreto do backup local no perfil da sidebar */}
-                  <span
-                    title={
-                      ultimoBackupSalvoEm
-                        ? `Backup local ativo (salvo às ${formatarHoraBackup(ultimoBackupSalvoEm)})`
-                        : 'Backup local aguardando dados'
-                    }
-                    className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
-                    onClick={handleForcarBackupManual}
+                    <DropdownMenuLabel className="font-normal text-xs py-1.5">
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-xs font-semibold leading-none text-white">{user.name}</p>
+                        <p className="text-[11px] leading-none text-slate-300 truncate">
+                          {user.email}
+                        </p>
+                        <div className="pt-1">
+                          <Badge
+                            variant="secondary"
+                            className={`text-[10px] py-0 px-1.5 h-4 font-normal ${
+                              user.role === 'Administrador'
+                                ? 'bg-purple-900/60 text-purple-200 border border-purple-400/30'
+                                : 'bg-blue-900/60 text-blue-200 border border-blue-400/30'
+                            }`}
+                          >
+                            <ShieldCheck className="mr-1 h-2.5 w-2.5" />
+                            {user.role || 'Coordenador'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator className="bg-[#1b3e63]" />
+                    <DropdownMenuItem
+                      onClick={handleForcarBackupManual}
+                      className="text-xs cursor-pointer text-slate-200 hover:bg-white/10 hover:text-white focus:bg-white/10 focus:text-white"
+                    >
+                      <Database className="mr-2 h-3.5 w-3.5 text-blue-400" />
+                      <span>{backupManualFeedback ? 'Backup Salvo!' : 'Salvar Backup Agora'}</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-[#1b3e63]" />
+                    <DropdownMenuItem
+                      onClick={handleLogout}
+                      className="text-xs cursor-pointer text-red-300 hover:bg-red-500/20 hover:text-red-200 focus:bg-red-500/20 focus:text-red-200"
+                    >
+                      <LogOut className="mr-2 h-3.5 w-3.5" />
+                      <span>Sair da Conta</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Ícone rápido de backup no modo recolhido */}
+                <Tooltip delayDuration={150}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={handleForcarBackupManual}
+                      aria-label="Salvar backup local agora"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <Database
+                        className={`h-4 w-4 ${
+                          backupManualFeedback ? 'text-emerald-400 animate-pulse' : 'text-blue-400'
+                        }`}
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="right"
+                    sideOffset={12}
+                    className="bg-[#0c2238] text-white border border-[#234e78] text-xs shadow-xl"
                   >
-                    <Database className="h-2.5 w-2.5 text-blue-400" />
-                    <span>
-                      {backupManualFeedback ? 'Salvo!' : formatarHoraBackup(ultimoBackupSalvoEm)}
-                    </span>
-                  </span>
+                    <div className="flex flex-col">
+                      <span className="font-semibold">
+                        {backupManualFeedback ? '✓ Salvo com sucesso!' : 'Backup Local Ativo'}
+                      </span>
+                      <span className="text-[11px] text-slate-300">
+                        Último: {formatarHoraBackup(ultimoBackupSalvoEm)}
+                      </span>
+                      <span className="text-[10px] text-blue-300 mt-0.5">
+                        Clique para salvar agora
+                      </span>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            ) : (
+              /* Modo Expandido: Visual completo padrão com avatar, nome, papel, backup e logout */
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1d4ed8] text-xs font-bold text-white shadow-md ring-2 ring-white/15">
+                  {getInitials(user.name)}
                 </div>
+                <div className="flex flex-1 min-w-0 flex-col">
+                  <span className="truncate text-xs font-semibold leading-tight text-white">
+                    {user.name}
+                  </span>
+                  <span className="truncate text-[11px] text-slate-300">{user.email}</span>
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    <Badge
+                      variant="secondary"
+                      className={`text-[10px] py-0 px-1.5 h-4 font-normal ${
+                        user.role === 'Administrador'
+                          ? 'bg-purple-900/60 text-purple-200 border border-purple-400/30'
+                          : 'bg-blue-900/60 text-blue-200 border border-blue-400/30'
+                      }`}
+                    >
+                      <ShieldCheck className="mr-1 h-2.5 w-2.5" />
+                      {user.role || 'Coordenador'}
+                    </Badge>
+                    {/* Status indicador discreto do backup local no perfil da sidebar */}
+                    <span
+                      title={
+                        ultimoBackupSalvoEm
+                          ? `Backup local ativo (salvo às ${formatarHoraBackup(ultimoBackupSalvoEm)})`
+                          : 'Backup local aguardando dados'
+                      }
+                      className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                      onClick={handleForcarBackupManual}
+                    >
+                      <Database className="h-2.5 w-2.5 text-blue-400" />
+                      <span>
+                        {backupManualFeedback ? 'Salvo!' : formatarHoraBackup(ultimoBackupSalvoEm)}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  title="Sair do sistema"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-red-500/20 hover:text-red-300 focus:outline-none focus:ring-1 focus:ring-red-400"
+                  aria-label="Sair"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                onClick={handleLogout}
-                title="Sair do sistema"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-red-500/20 hover:text-red-300 focus:outline-none focus:ring-1 focus:ring-red-400"
-                aria-label="Sair"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </div>
+            )}
           </div>
         )}
       </aside>
@@ -223,7 +490,11 @@ export default function Layout() {
       {/* ========================================================
           MOBILE TOPBAR + SLIDE-IN DRAWER
          ======================================================== */}
-      <div className="flex flex-1 flex-col md:pl-[260px]">
+      <div
+        className={`flex flex-1 flex-col transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'md:pl-[76px]' : 'md:pl-[260px]'
+        }`}
+      >
         {/* Mobile Header (visível apenas em telas menores) */}
         <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-[#1b3e63] bg-[#0f2b48] px-4 text-white shadow-md md:hidden">
           <NavLink to="/" className="flex items-center gap-2.5">
