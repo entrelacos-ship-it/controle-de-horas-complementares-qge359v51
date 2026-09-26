@@ -6,7 +6,6 @@ import { listarCategorias } from '@/services/categorias'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
 import { useApp } from '@/contexts/AppContext'
 import type { Aluno, Lancamento, Categoria, ConfiguracaoGlobal } from '@/types'
-import { TurmaVisualizacaoGraficos } from '@/components/TurmaVisualizacaoGraficos'
 import {
   Building2,
   Users,
@@ -694,19 +693,6 @@ export default function Turmas() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Painel de Visualização de Dados (Recharts) por Turma e Categoria NDE */}
-      {!loading && (
-        <TurmaVisualizacaoGraficos
-          alunosFiltrados={alunosFiltrados}
-          lancamentos={lancamentos}
-          categorias={categorias}
-          config={config}
-          metricasPorAluno={metricasPorAluno}
-          semestreAtual={semestreAtual}
-          minimoSemestral={minimoSemestral}
-        />
-      )}
 
       {/* Barra de Filtros Combinados (Entrada + Turno + Balanço Semestral + Busca) */}
       <Card className="border-slate-200 shadow-sm">

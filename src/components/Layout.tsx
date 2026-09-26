@@ -95,44 +95,12 @@ export default function Layout() {
 
   const navItems = [
     { label: 'Início', path: '/', icon: LayoutDashboard },
-    {
-      label: 'Lançamento Rápido',
-      path: '/lancamento',
-      icon: Zap,
-      tag: '< 15s',
-      tagColor: 'bg-amber-400 text-amber-950',
-    },
+    { label: 'Lançamento Rápido', path: '/lancamento', icon: Zap },
     { label: 'Alunos', path: '/alunos', icon: Users },
-    {
-      label: 'Turmas',
-      path: '/turmas',
-      icon: Building2,
-      tag: 'Gráficos',
-      tagColor: 'bg-blue-600 text-white',
-    },
-    {
-      label: 'Carga Legada (Excel)',
-      path: '/importacao',
-      icon: FileSpreadsheet,
-      subtitle: 'Fase 3: Parser & Conciliação',
-      tag: 'Fase 3',
-      tagColor: 'bg-purple-600 text-white',
-    },
-    {
-      label: 'Auditoria & Fechamento',
-      path: '/auditoria',
-      icon: ShieldCheck,
-      subtitle: 'Atas NDE & Logs Globais',
-      tag: 'Atas NDE',
-      tagColor: 'bg-[#1d4ed8] text-white',
-      destaque: true,
-    },
-    {
-      label: 'Tabela NDE & Parâmetros',
-      path: '/configuracoes',
-      icon: Settings,
-      subtitle: 'Tetos e regras do curso',
-    },
+    { label: 'Turmas', path: '/turmas', icon: Building2 },
+    { label: 'Carga Legada (Excel)', path: '/importacao', icon: FileSpreadsheet },
+    { label: 'Auditoria & Fechamento', path: '/auditoria', icon: ShieldCheck },
+    { label: 'Tabela NDE & Parâmetros', path: '/configuracoes', icon: Settings },
   ]
 
   const getInitials = (name?: string) => {
@@ -185,30 +153,12 @@ export default function Layout() {
                 >
                   <Icon
                     className={`h-4 w-4 shrink-0 transition-transform group-hover:scale-105 ${
-                      isActive
-                        ? 'text-white'
-                        : item.destaque
-                          ? 'text-blue-300'
-                          : 'text-slate-400 group-hover:text-white'
+                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
                     }`}
                   />
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span className="truncate leading-tight font-medium">{item.label}</span>
-                    {item.subtitle && (
-                      <span className="truncate text-[10px] text-slate-400 font-normal leading-tight">
-                        {item.subtitle}
-                      </span>
-                    )}
-                  </div>
-                  {item.tag && (
-                    <span
-                      className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 shadow-2xs ${item.tagColor}`}
-                    >
-                      {item.tag}
-                    </span>
-                  )}
-                  {isActive && !item.tag && (
-                    <span className="ml-auto h-2 w-2 rounded-full bg-blue-300 shadow-sm" />
+                  <span className="truncate leading-tight font-medium flex-1">{item.label}</span>
+                  {isActive && (
+                    <span className="ml-auto h-2 w-2 rounded-full bg-blue-300 shadow-sm shrink-0" />
                   )}
                 </NavLink>
               )
@@ -347,20 +297,9 @@ export default function Layout() {
                         }`}
                       >
                         <Icon className="h-4 w-4 shrink-0" />
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="truncate leading-tight">{item.label}</span>
-                          {item.subtitle && (
-                            <span className="truncate text-[10px] text-slate-400 font-normal">
-                              {item.subtitle}
-                            </span>
-                          )}
-                        </div>
-                        {item.tag && (
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${item.tagColor}`}
-                          >
-                            {item.tag}
-                          </span>
+                        <span className="truncate leading-tight flex-1">{item.label}</span>
+                        {isActive && (
+                          <span className="ml-auto h-2 w-2 rounded-full bg-blue-300 shadow-sm shrink-0" />
                         )}
                       </NavLink>
                     )
