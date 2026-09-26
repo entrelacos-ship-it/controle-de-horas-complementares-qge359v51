@@ -54,16 +54,25 @@ export function prepararDadosTurma(
   })
 }
 
-export function exportarTurmaExcel(params: {
+export interface ExportarTurmaOpcoes {
   itens: TurmaItemExportacao[]
   config: ConfiguracaoGlobal | null
   filtroEntrada?: string
   filtroTurno?: string
-}) {
-  const { itens, config, filtroEntrada = 'Todas', filtroTurno = 'Todos' } = params
+  filtroStatus?: string
+}
+
+export function exportarTurmaExcel(params: ExportarTurmaOpcoes) {
+  const {
+    itens,
+    config,
+    filtroEntrada = 'Todas',
+    filtroTurno = 'Todos',
+    filtroStatus = 'Todos',
+  } = params
   const semestreAtual = config?.semestre_letivo_atual || '2026.2'
-  const metaCurso = config?.meta_curso || 200
-  const minimoSemestral = config?.minimo_exigido_semestre || 20
+  const metaCurso = Number(config?.meta_curso) || 200
+  const minimoSemestral = Number(config?.minimo_exigido_semestre) || 20
   const dataEmissao = new Date().toLocaleString('pt-BR')
 
   // Agrupar itens por Entrada e Turno
@@ -82,17 +91,28 @@ export function exportarTurmaExcel(params: {
   // Montar linhas da planilha (formato matriz de células)
   const rows: (string | number)[][] = [
     ['FAUSP — Faculdade de Psicologia'],
-    ['Controle de Horas Complementares — Painel por Turma'],
-    [`Semestre Letivo: ${semestreAtual}`, `Data de Emissão: ${dataEmissao}`],
-    [`Filtros Aplicados: Entrada [${filtroEntrada}] | Turno [${filtroTurno}]`],
+    ['Controle de Horas Complementares — Painel por Turma & Balanço Semestral'],
+    [`Semestre Letivo de Referência: ${semestreAtual}`, `Data de Emissão: ${dataEmissao}`],
     [
-      `Parâmetros NDE: Meta do Curso = ${metaCurso}h | Mínimo Semestral Exigido = ${minimoSemestral}h`,
+      `Filtros Aplicados: Entrada [${filtroEntrada}] | Turno [${filtroTurno}] | Balanço Semestral [${filtroStatus}]`,
+      `Total de Estudantes: ${itens.length}`,
+    ],
+    [
+      `Parâmetros NDE: Mínimo Semestral Exigido = ${minimoSemestral}h | Meta Global do Curso = ${metaCurso}h`,
     ],
     [], // linha em branco
   ]
 
   chavesOrdenadas.forEach((grupoChave) => {
-    rows.push([`>>> ${grupoChave.toUpperCase()} (${grupos[grupoChave].length} estudantes)`])
+    const grupoAlunos = [...grupos[grupoChave]].sort((a, b) => a.nome.localeCompare(b.nome))
+    const totalGrupo = grupoAlunos.length
+    const cumpriram = grupoAlunos.filter((a) => a.cumpriu).length
+    const naoCumpriram = totalGrupo - cumpriram
+    const pct = totalGrupo > 0 ? Math.round((cumpriram / totalGrupo) * 100) : 0
+
+    rows.push([
+      `>>> ${grupoChave.toUpperCase()} (${totalGrupo} estudantes | ${cumpriram} CUMPRIU [${pct}%] | ${naoCumpriram} NÃO CUMPRIU)`,
+    ])
     rows.push([
       'Nome do Estudante',
       'Matrícula',
@@ -105,9 +125,7 @@ export function exportarTurmaExcel(params: {
       'Balanço Semestral',
     ])
 
-    const alunosDoGrupo = [...grupos[grupoChave]].sort((a, b) => a.nome.localeCompare(b.nome))
-
-    alunosDoGrupo.forEach((aluno) => {
+    grupoAlunos.forEach((aluno) => {
       rows.push([
         aluno.nome,
         aluno.matricula,
@@ -124,46 +142,175 @@ export function exportarTurmaExcel(params: {
     rows.push([]) // espaçador entre grupos
   })
 
-  // Nota de rodapé pedagógica
+  // Nota de rodapé pedagógica oficial
+  rows.push([])
+  rows.push(['NOTA PEDAGÓGICA OFICIAL INSTITUCIONAL:'])
   rows.push([
-    'NOTA PEDAGÓGICA INSTITUCIONAL: O balanço "NÃO CUMPRIU" é um alerta pedagógico de acompanhamento semestral e NÃO GERA DP nem reprovação.',
+    `O status "NÃO CUMPRIU" (< ${minimoSemestral}h no semestre ${semestreAtual}) é um instrumento formativo de acompanhamento pedagógico do Colegiado e NDE de Psicologia.`,
   ])
+  rows.push(['NÃO GERA DEPENDÊNCIA ACADÊMICA (DP), NEM REPROVAÇÃO, NEM IMPEDIMENTO DE MATRÍCULA.'])
   rows.push([
-    'O estudante pode compensar as horas complementares nos semestres subsequentes até a integralização das 200h totais exigidas.',
+    `O discente pode compensar as horas nos semestres subsequentes até a integralização das ${metaCurso}h totais exigidas para a colação de grau.`,
   ])
 
   const ws = XLSX.utils.aoa_to_sheet(rows)
 
   // Configurar larguras aproximadas das colunas
   ws['!cols'] = [
-    { wch: 36 }, // Nome
+    { wch: 38 }, // Nome
     { wch: 16 }, // Matrícula
-    { wch: 12 }, // Turno
+    { wch: 14 }, // Turno
     { wch: 12 }, // Entrada
     { wch: 16 }, // Semestre Atual
     { wch: 18 }, // Total Geral
     { wch: 22 }, // Horas Semestre Atual
-    { wch: 20 }, // Restante Semestre
+    { wch: 22 }, // Restante Semestre
     { wch: 20 }, // Balanço Semestral
   ]
 
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Painel Turma')
+  XLSX.utils.book_append_sheet(wb, ws, 'Painel Turmas')
 
-  const nomeArquivo = `horas-complementares-turma-${semestreAtual}.xlsx`
+  const nomeArquivo = `horas-complementares-turmas-${semestreAtual}.xlsx`
   XLSX.writeFile(wb, nomeArquivo)
 }
 
-export function exportarTurmaPdf(params: {
-  itens: TurmaItemExportacao[]
-  config: ConfiguracaoGlobal | null
-  filtroEntrada?: string
-  filtroTurno?: string
-}) {
-  const { itens, config, filtroEntrada = 'Todas', filtroTurno = 'Todos' } = params
+export function exportarTurmaCsv(params: ExportarTurmaOpcoes) {
+  const {
+    itens,
+    config,
+    filtroEntrada = 'Todas',
+    filtroTurno = 'Todos',
+    filtroStatus = 'Todos',
+  } = params
   const semestreAtual = config?.semestre_letivo_atual || '2026.2'
-  const metaCurso = config?.meta_curso || 200
-  const minimoSemestral = config?.minimo_exigido_semestre || 20
+  const metaCurso = Number(config?.meta_curso) || 200
+  const minimoSemestral = Number(config?.minimo_exigido_semestre) || 20
+  const dataEmissao = new Date().toLocaleString('pt-BR')
+
+  // Agrupar itens por Entrada e Turno
+  const grupos: { [chave: string]: TurmaItemExportacao[] } = {}
+  itens.forEach((item) => {
+    const chave = `Turma ${item.periodo_entrada} — ${item.turno}`
+    if (!grupos[chave]) {
+      grupos[chave] = []
+    }
+    grupos[chave].push(item)
+  })
+
+  const chavesOrdenadas = Object.keys(grupos).sort((a, b) => b.localeCompare(a))
+
+  const escapeCsv = (val: string | number) => {
+    const str = String(val ?? '')
+    if (str.includes(';') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    return str
+  }
+
+  const linhas: string[] = []
+  linhas.push(escapeCsv('FAUSP — Faculdade de Psicologia'))
+  linhas.push(escapeCsv('Controle de Horas Complementares — Painel por Turma & Balanço Semestral'))
+  linhas.push(
+    `${escapeCsv(`Semestre Letivo de Referência: ${semestreAtual}`)};${escapeCsv(`Data de Emissão: ${dataEmissao}`)}`,
+  )
+  linhas.push(
+    `${escapeCsv(`Filtros: Entrada [${filtroEntrada}] | Turno [${filtroTurno}] | Balanço Semestral [${filtroStatus}]`)};${escapeCsv(`Total de Estudantes: ${itens.length}`)}`,
+  )
+  linhas.push(
+    escapeCsv(
+      `Critérios NDE: Mínimo Semestral = ${minimoSemestral}h | Meta Global = ${metaCurso}h`,
+    ),
+  )
+  linhas.push('')
+
+  chavesOrdenadas.forEach((grupoChave) => {
+    const grupoAlunos = [...grupos[grupoChave]].sort((a, b) => a.nome.localeCompare(b.nome))
+    const totalGrupo = grupoAlunos.length
+    const cumpriram = grupoAlunos.filter((a) => a.cumpriu).length
+    const naoCumpriram = totalGrupo - cumpriram
+    const pct = totalGrupo > 0 ? Math.round((cumpriram / totalGrupo) * 100) : 0
+
+    linhas.push(
+      escapeCsv(
+        `>>> ${grupoChave.toUpperCase()} (${totalGrupo} estudantes | ${cumpriram} CUMPRIU [${pct}%] | ${naoCumpriram} NÃO CUMPRIU)`,
+      ),
+    )
+    linhas.push(
+      [
+        'Nome do Estudante',
+        'Matrícula',
+        'Turno',
+        'Entrada',
+        'Semestre Atual',
+        `Total Geral (${metaCurso}h)`,
+        `Horas Semestre (${semestreAtual})`,
+        'Restante Semestre',
+        'Balanço Semestral',
+      ]
+        .map(escapeCsv)
+        .join(';'),
+    )
+
+    grupoAlunos.forEach((aluno) => {
+      linhas.push(
+        [
+          aluno.nome,
+          aluno.matricula,
+          aluno.turno,
+          aluno.periodo_entrada,
+          `${aluno.semestre_atual}º Semestre`,
+          `${aluno.totalGeral}h`,
+          `${aluno.horasSemestre}h`,
+          aluno.restanteSemestre > 0 ? `Faltam ${aluno.restanteSemestre}h` : 'Integralizado',
+          aluno.cumpriu ? 'CUMPRIU' : 'NÃO CUMPRIU',
+        ]
+          .map(escapeCsv)
+          .join(';'),
+      )
+    })
+
+    linhas.push('')
+  })
+
+  linhas.push(escapeCsv('NOTA PEDAGÓGICA OFICIAL INSTITUCIONAL:'))
+  linhas.push(
+    escapeCsv(
+      `O status "NÃO CUMPRIU" (< ${minimoSemestral}h no semestre ${semestreAtual}) é um instrumento formativo de acompanhamento pedagógico do Colegiado e NDE de Psicologia.`,
+    ),
+  )
+  linhas.push(
+    escapeCsv('NÃO GERA DEPENDÊNCIA ACADÊMICA (DP), NEM REPROVAÇÃO, NEM IMPEDIMENTO DE MATRÍCULA.'),
+  )
+  linhas.push(
+    escapeCsv(
+      `O discente pode compensar as horas nos semestres subsequentes até a integralização das ${metaCurso}h totais exigidas para a colação de grau.`,
+    ),
+  )
+
+  const csvContent = '\uFEFF' + linhas.join('\r\n')
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `horas-complementares-turmas-${semestreAtual}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+export function exportarTurmaPdf(params: ExportarTurmaOpcoes) {
+  const {
+    itens,
+    config,
+    filtroEntrada = 'Todas',
+    filtroTurno = 'Todos',
+    filtroStatus = 'Todos',
+  } = params
+  const semestreAtual = config?.semestre_letivo_atual || '2026.2'
+  const metaCurso = Number(config?.meta_curso) || 200
+  const minimoSemestral = Number(config?.minimo_exigido_semestre) || 20
   const dataEmissao = new Date().toLocaleString('pt-BR')
 
   // Documento em formato A4 Paisagem (landscape) para acomodar com folga todas as colunas
@@ -187,7 +334,7 @@ export function exportarTurmaPdf(params: {
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
-  doc.text('Controle de Horas Complementares — Painel por Turma', 40, 38)
+  doc.text('Controle de Horas Complementares — Painel por Turma & Balanço Semestral', 40, 38)
 
   // Metadados abaixo do banner
   doc.setTextColor(51, 65, 85) // slate-700
@@ -195,7 +342,7 @@ export function exportarTurmaPdf(params: {
   doc.text(`Semestre Letivo de Referência: ${semestreAtual}`, 40, 64)
   doc.text(`Data de Emissão: ${dataEmissao}`, 40, 77)
 
-  const filtrosTexto = `Filtros: Entrada [${filtroEntrada}] | Turno [${filtroTurno}] | Total de Estudantes: ${itens.length}`
+  const filtrosTexto = `Filtros: Entrada [${filtroEntrada}] | Turno [${filtroTurno}] | Balanço [${filtroStatus}] | Total: ${itens.length}`
   doc.text(filtrosTexto, 400, 64)
   doc.text(
     `Critérios NDE: Mínimo Semestral = ${minimoSemestral}h | Meta Total = ${metaCurso}h`,
@@ -318,30 +465,32 @@ export function exportarTurmaPdf(params: {
   })
 
   // Se a nota pedagógica não couber na página atual, adiciona página
-  if (currentY > pageHeight - 90) {
+  if (currentY > pageHeight - 100) {
     doc.addPage()
     currentY = 40
   }
 
   // Caixa da Nota Pedagógica
   doc.setFillColor(254, 243, 199) // amber-100
-  doc.setDrawColor(245, 158, 11) // amber-500
+  doc.setDrawColor(217, 119, 6) // amber-600
   doc.setLineWidth(1)
-  doc.roundedRect(40, currentY, pageWidth - 80, 48, 4, 4, 'FD')
+  doc.roundedRect(40, currentY, pageWidth - 80, 52, 4, 4, 'FD')
 
   doc.setTextColor(120, 53, 15) // amber-900
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.5)
-  doc.text('AVISO PEDAGÓGICO INSTITUCIONAL:', 50, currentY + 16)
+  doc.text('NOTA PEDAGÓGICA OFICIAL INSTITUCIONAL:', 50, currentY + 16)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  const textoNota1 =
-    'O status "NÃO CUMPRIU" é um alerta pedagógico de acompanhamento semestral e NÃO GERA DP (dependência) nem reprovação.'
-  const textoNota2 =
-    'O estudante pode compensar as horas nos semestres subsequentes até a integralização das 200h totais exigidas no curso de Psicologia da FAUSP.'
-  doc.text(textoNota1, 50, currentY + 29)
-  doc.text(textoNota2, 50, currentY + 40)
+  const textoNota1 = `O status "NÃO CUMPRIU" (< ${minimoSemestral}h) é um instrumento formativo de acompanhamento pedagógico do Colegiado e NDE.`
+  const textoNota2 = 'NÃO GERA DEPENDÊNCIA (DP), REPROVAÇÃO OU IMPEDIMENTO DE MATRÍCULA NO CURSO.'
+  const textoNota3 = `O estudante pode compensar as horas nos semestres subsequentes até a integralização das ${metaCurso}h exigidas no curso de Psicologia.`
+  doc.text(textoNota1, 50, currentY + 28)
+  doc.setFont('helvetica', 'bold')
+  doc.text(textoNota2, 50, currentY + 38)
+  doc.setFont('helvetica', 'normal')
+  doc.text(textoNota3, 50, currentY + 48)
 
   // Rodapé em todas as páginas: numeração
   const totalPages = doc.getNumberOfPages()
