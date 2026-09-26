@@ -14,10 +14,18 @@ import {
   ChevronRight,
   Info,
   Loader2,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  prepararDadosTurma,
+  exportarTurmaExcel,
+  exportarTurmaPdf,
+  type TurmaItemExportacao,
+} from '@/lib/exportacaoTurma'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +51,8 @@ export default function Turmas() {
   const [filtroEntrada, setFiltroEntrada] = useState('Todas')
   const [filtroTurno, setFiltroTurno] = useState('Todos')
   const [promovendo, setPromovendo] = useState(false)
+  const [exportandoExcel, setExportandoExcel] = useState(false)
+  const [exportandoPdf, setExportandoPdf] = useState(false)
 
   const carregarDados = async () => {
     try {
@@ -110,6 +120,58 @@ export default function Turmas() {
     }
   }
 
+  const handleExportarExcel = () => {
+    try {
+      setExportandoExcel(true)
+      const dadosPreparados = prepararDadosTurma(alunosFiltrados, lancamentos, config)
+      exportarTurmaExcel({
+        itens: dadosPreparados,
+        config,
+        filtroEntrada,
+        filtroTurno,
+      })
+      toast({
+        title: 'Planilha Excel gerada com sucesso!',
+        description: `Arquivo horas-complementares-turma-${semestreAtual}.xlsx baixado.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao exportar Excel',
+        description: 'Ocorreu uma falha ao gerar a planilha.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportandoExcel(false)
+    }
+  }
+
+  const handleExportarPdf = () => {
+    try {
+      setExportandoPdf(true)
+      const dadosPreparados = prepararDadosTurma(alunosFiltrados, lancamentos, config)
+      exportarTurmaPdf({
+        itens: dadosPreparados,
+        config,
+        filtroEntrada,
+        filtroTurno,
+      })
+      toast({
+        title: 'Relatório PDF gerado com sucesso!',
+        description: `Arquivo horas-complementares-turma-${semestreAtual}.pdf baixado.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao exportar PDF',
+        description: 'Ocorreu uma falha ao gerar o documento PDF.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportandoPdf(false)
+    }
+  }
+
   const handlePromoverSemestres = async () => {
     try {
       setPromovendo(true)
@@ -144,7 +206,39 @@ export default function Turmas() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Botão Exportar Excel */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportarExcel}
+            disabled={exportandoExcel || loading || alunosFiltrados.length === 0}
+            className="text-xs text-slate-700 hover:text-green-700 hover:border-green-300 hover:bg-green-50/50 shadow-xs"
+          >
+            {exportandoExcel ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-green-600" />
+            ) : (
+              <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-green-600" />
+            )}
+            Exportar Excel (.xlsx)
+          </Button>
+
+          {/* Botão Exportar PDF */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportarPdf}
+            disabled={exportandoPdf || loading || alunosFiltrados.length === 0}
+            className="text-xs text-slate-700 hover:text-red-700 hover:border-red-300 hover:bg-red-50/50 shadow-xs"
+          >
+            {exportandoPdf ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-red-600" />
+            ) : (
+              <FileText className="mr-1.5 h-3.5 w-3.5 text-red-600" />
+            )}
+            Exportar PDF
+          </Button>
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm" className="text-xs text-slate-700">
