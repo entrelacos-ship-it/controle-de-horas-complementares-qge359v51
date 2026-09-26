@@ -55,11 +55,13 @@ export function gerarTextoDespacho(params: GerarDespachoParams): string {
   const semestreAtualLetivo = config.semestre_letivo_atual || '2026.2'
   const minimoSemestre = config.minimo_exigido_semestre || 20
   const metaCurso = config.meta_curso || 200
+  const nomeCoordenadora = config.nome_da_coordenadora?.trim() || 'Roberta Andrea de Oliveira'
+  const crpCoordenadora = config.crp_coordenadora?.trim() || '06/77114'
 
-  // 1. Abertura
+  // 1. Abertura parametrizada com a Coordenadora e seu CRP
   const linhas: string[] = []
   linhas.push(
-    `Horas Complementares aceitas pela Coordenação do Curso de Psicologia, Roberta Andrea de Oliveira, CRP. 06/77114, na categoria ${categoriaAtividade.nome}, totalizando ${horasLancamento} horas, de acordo com a tabela atual de ${semestreAtividade || semestreAtualLetivo}.`,
+    `Horas Complementares aceitas pela Coordenação do Curso de Psicologia, ${nomeCoordenadora}, CRP. ${crpCoordenadora}, na categoria ${categoriaAtividade.nome}, totalizando ${horasLancamento} horas, de acordo com a tabela atual de ${semestreAtividade || semestreAtualLetivo}.`,
   )
   linhas.push('')
   linhas.push('Situação atual do/a estudante:')

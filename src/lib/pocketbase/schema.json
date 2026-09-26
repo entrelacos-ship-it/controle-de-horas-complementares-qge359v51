@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-26T13:43:30.743Z",
+  "generatedAt": "2026-09-26T13:50:09.836Z",
   "collections": [
     {
       "name": "users",
@@ -109,6 +109,18 @@
         {
           "name": "ultima_virada_alunos_promovidos",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "nome_da_coordenadora",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "crp_coordenadora",
+          "type": "text",
           "required": false,
           "system": false
         }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { getConfiguracaoGlobal, salvarConfiguracaoGlobal } from '@/services/configuracao'
 import {
@@ -8,6 +8,14 @@ import {
   excluirCategoria,
 } from '@/services/categorias'
 import { contarLancamentosPorCategoria } from '@/services/lancamentos'
+import {
+  exportarBackupCompleto,
+  baixarArquivoJson,
+  validarArquivoBackup,
+  restaurarBackupJson,
+  restaurarDadosDemonstracao,
+  BackupData,
+} from '@/services/backup'
 import type { ConfiguracaoGlobal, Categoria } from '@/types'
 import {
   Settings,
@@ -17,19 +25,22 @@ import {
   Trash2,
   Check,
   AlertCircle,
-  HelpCircle,
   Loader2,
   Lock,
-  Layers,
   Save,
   CalendarFold,
   ArrowRight,
-  Users,
   CheckSquare,
   Square,
   Sparkles,
   Info,
   Calendar,
+  Download,
+  Upload,
+  RotateCcw,
+  Database,
+  FileJson,
+  FileCheck,
 } from 'lucide-react'
 import {
   listarAlunos,
@@ -52,7 +63,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   AlertDialog,
@@ -63,23 +73,24 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useToast } from '@/hooks/use-toast'
 
 export default function ConfiguracoesNDE() {
-  const { user, isAdmin } = useAuth()
+  const { isAdmin } = useAuth()
   const { toast } = useToast()
 
   const [config, setConfig] = useState<ConfiguracaoGlobal | null>(null)
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Form Global Config
+  // Form Global Config (Semestre, Mínimo, Meta, Coordenadora, CRP)
   const [semestreLetivo, setSemestreLetivo] = useState('2026.2')
   const [minimoSemestral, setMinimoSemestral] = useState(20)
   const [metaCurso, setMetaCurso] = useState(200)
+  const [nomeCoordenadora, setNomeCoordenadora] = useState('Roberta Andrea de Oliveira')
+  const [crpCoordenadora, setCrpCoordenadora] = useState('06/77114')
   const [salvandoConfig, setSalvandoConfig] = useState(false)
 
   // Modal Categoria (Novo / Editar)
@@ -96,7 +107,7 @@ export default function ConfiguracoesNDE() {
   const [deletingCat, setDeletingCat] = useState<Categoria | null>(null)
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
 
-  // ESTADOS DA VIRADA DE SEMESTRE ASSISTIDA (FASE 3)
+  // ESTADOS DA VIRADA DE SEMESTRE ASSISTIDA
   const [isViradaModalOpen, setIsViradaModalOpen] = useState(false)
   const [viradaEtapa, setViradaEtapa] = useState<'config' | 'preview' | 'executando' | 'resumo'>(
     'config',
@@ -110,6 +121,22 @@ export default function ConfiguracoesNDE() {
   const [progressoViradaTexto, setProgressoViradaTexto] = useState<string>('')
   const [resultadoVirada, setResultadoVirada] = useState<ResultadoViradaSemestre | null>(null)
   const [erroExecucaoVirada, setErroExecucaoVirada] = useState<string | null>(null)
+
+  // ESTADOS DE BACKUP E RESTAURAÇÃO JSON
+  const [exportandoBackup, setExportandoBackup] = useState(false)
+  const [arquivoBackupSelecionado, setArquivoBackupSelecionado] = useState<BackupData | null>(null)
+  const [nomeArquivoJson, setNomeArquivoJson] = useState<string>('')
+  const [isModalRestaurarBackupOpen, setIsModalRestaurarBackupOpen] = useState(false)
+  const [restaurandoBackup, setRestaurandoBackup] = useState(false)
+  const [progressoRestauracaoTexto, setProgressoRestauracaoTexto] = useState<string>('')
+  const [progressoRestauracao, setProgressoRestauracao] = useState<number>(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // ESTADOS DE RESTAURAÇÃO DOS DADOS DEMO
+  const [isModalDemoOpen1, setIsModalDemoOpen1] = useState(false)
+  const [isModalDemoOpen2, setIsModalDemoOpen2] = useState(false)
+  const [restaurandoDemo, setRestaurandoDemo] = useState(false)
+  const [progressoDemoTexto, setProgressoDemoTexto] = useState<string>('')
 
   const carregarDados = async () => {
     try {
@@ -125,6 +152,8 @@ export default function ConfiguracoesNDE() {
         setSemestreLetivo(cfg.semestre_letivo_atual || '2026.2')
         setMinimoSemestral(cfg.minimo_exigido_semestre || 20)
         setMetaCurso(cfg.meta_curso || 200)
+        setNomeCoordenadora(cfg.nome_da_coordenadora?.trim() || 'Roberta Andrea de Oliveira')
+        setCrpCoordenadora(cfg.crp_coordenadora?.trim() || '06/77114')
       }
     } catch (err) {
       console.error(err)
@@ -160,11 +189,13 @@ export default function ConfiguracoesNDE() {
         semestre_letivo_atual: semestreLetivo.trim(),
         minimo_exigido_semestre: Number(minimoSemestral),
         meta_curso: Number(metaCurso),
+        nome_da_coordenadora: nomeCoordenadora.trim(),
+        crp_coordenadora: crpCoordenadora.trim(),
       })
       setConfig(updated)
       toast({
         title: 'Configurações atualizadas com sucesso!',
-        description: `Semestre ${updated.semestre_letivo_atual}, Mínimo ${updated.minimo_exigido_semestre}h, Meta ${updated.meta_curso}h.`,
+        description: `Semestre ${updated.semestre_letivo_atual}, Mínimo ${updated.minimo_exigido_semestre}h, Meta ${updated.meta_curso}h. Coordenação: ${updated.nome_da_coordenadora} (CRP ${updated.crp_coordenadora}).`,
       })
     } catch (err) {
       console.error(err)
@@ -178,6 +209,132 @@ export default function ConfiguracoesNDE() {
     }
   }
 
+  // OPERAÇÕES DE BACKUP JSON
+  const handleExportarBackup = async () => {
+    try {
+      setExportandoBackup(true)
+      const backup = await exportarBackupCompleto()
+      baixarArquivoJson(backup)
+      toast({
+        title: 'Cópia de segurança gerada com sucesso!',
+        description: `Download do JSON com ${backup.alunos.length} alunos, ${backup.categorias.length} categorias e ${backup.lancamentos.length} lançamentos.`,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao gerar cópia de segurança',
+        description: 'Não foi possível compilar os dados do sistema.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportandoBackup(false)
+    }
+  }
+
+  const handleSelecionarArquivoBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setNomeArquivoJson(file.name)
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const conteudo = event.target?.result as string
+        const parsed = JSON.parse(conteudo)
+        const validacao = validarArquivoBackup(parsed)
+
+        if (!validacao.valido || !validacao.dados) {
+          toast({
+            title: 'Arquivo de backup inválido',
+            description: validacao.erro || 'O arquivo selecionado não contém o formato esperado.',
+            variant: 'destructive',
+          })
+          setArquivoBackupSelecionado(null)
+          return
+        }
+
+        setArquivoBackupSelecionado(validacao.dados)
+        setIsModalRestaurarBackupOpen(true)
+      } catch (err) {
+        console.error(err)
+        toast({
+          title: 'Erro ao ler arquivo JSON',
+          description: 'Certifique-se de selecionar um arquivo JSON válido.',
+          variant: 'destructive',
+        })
+        setArquivoBackupSelecionado(null)
+      }
+    }
+    reader.readAsText(file)
+    // Limpar o input para permitir selecionar o mesmo arquivo novamente
+    e.target.value = ''
+  }
+
+  const handleExecutarRestauracaoBackup = async () => {
+    if (!arquivoBackupSelecionado || !isAdmin) return
+
+    try {
+      setRestaurandoBackup(true)
+      setProgressoRestauracao(5)
+      setProgressoRestauracaoTexto('Iniciando restauração da cópia de segurança...')
+
+      const resultado = await restaurarBackupJson(arquivoBackupSelecionado, (msg, pct) => {
+        setProgressoRestauracaoTexto(msg)
+        setProgressoRestauracao(pct)
+      })
+
+      setIsModalRestaurarBackupOpen(false)
+      setArquivoBackupSelecionado(null)
+      await carregarDados()
+
+      toast({
+        title: 'Restauração concluída!',
+        description: resultado.mensagem,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Erro ao restaurar cópia de segurança',
+        description: 'Ocorreu um erro durante a gravação dos dados no servidor.',
+        variant: 'destructive',
+      })
+    } finally {
+      setRestaurandoBackup(false)
+    }
+  }
+
+  // OPERAÇÕES DE DADOS DEMO COM DUPLA CONFIRMAÇÃO
+  const handleConfirmarRestauracaoDemoFinal = async () => {
+    if (!isAdmin) return
+    setIsModalDemoOpen2(false)
+
+    try {
+      setRestaurandoDemo(true)
+      setProgressoDemoTexto('Restaurando estudantes, categorias e lançamentos da demonstração...')
+
+      const resultado = await restaurarDadosDemonstracao((msg) => {
+        setProgressoDemoTexto(msg)
+      })
+
+      await carregarDados()
+
+      toast({
+        title: 'Dados de demonstração restaurados!',
+        description: resultado.mensagem,
+      })
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Falha na restauração dos dados demo',
+        description: 'Não foi possível restaurar os dados originais no banco.',
+        variant: 'destructive',
+      })
+    } finally {
+      setRestaurandoDemo(false)
+    }
+  }
+
+  // CRUD Categorias
   const handleAbrirNovaCategoria = () => {
     setEditingCatId(null)
     setCatNome('')
@@ -274,17 +431,13 @@ export default function ConfiguracoesNDE() {
     }
   }
 
-  // Helpers para Virada de Semestre Assistida
+  // Helpers para Virada de Semestre
   const sugerirProximoSemestre = (semestreAtual: string): string => {
     const match = semestreAtual.match(/^(\d{4})\.([12])$/)
     if (!match) return '2027.1'
     const ano = parseInt(match[1], 10)
     const sem = parseInt(match[2], 10)
-    if (sem === 1) {
-      return `${ano}.2`
-    } else {
-      return `${ano + 1}.1`
-    }
+    return sem === 1 ? `${ano}.2` : `${ano + 1}.1`
   }
 
   const validarFormatoSemestre = (s: string): boolean => {
@@ -328,7 +481,6 @@ export default function ConfiguracoesNDE() {
     try {
       const todos = await listarAlunos()
       setAlunosVirada(todos)
-      // Por padrão, todos os alunos que ainda não estão no 10º vêm selecionados
       const selecionados = new Set<string>()
       todos.forEach((a) => {
         if (Number(a.semestre_atual) < 10) {
@@ -393,8 +545,6 @@ export default function ConfiguracoesNDE() {
 
       setResultadoVirada(resultado)
       setViradaEtapa('resumo')
-
-      // Recarrega os dados na tela
       await carregarDados()
 
       toast({
@@ -416,7 +566,6 @@ export default function ConfiguracoesNDE() {
 
   const handleConfirmarExclusao = async (c: Categoria) => {
     setDeletingCat(c)
-    // Verifica se possui lançamentos
     try {
       const total = await contarLancamentosPorCategoria(c.id)
       if (total > 0) {
@@ -447,8 +596,7 @@ export default function ConfiguracoesNDE() {
       console.error(err)
       toast({
         title: 'Não foi possível excluir',
-        description:
-          'Esta categoria possui lançamentos ou ocorreu erro no servidor. Marque-a como inativa.',
+        description: 'Esta categoria possui lançamentos ou ocorreu erro no servidor.',
         variant: 'destructive',
       })
     }
@@ -465,10 +613,11 @@ export default function ConfiguracoesNDE() {
             </div>
             <div>
               <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-[#0f2b48] sm:text-3xl">
-                Configurações NDE & Regulamento
+                Tabela NDE Parametrizável & Backup
               </h1>
               <p className="text-sm text-slate-600">
-                Parametrização global do curso e tabela de tetos de atividades complementares
+                Parâmetros do curso, assinatura de despachos, regulamento NDE e cópias de segurança
+                JSON
               </p>
             </div>
           </div>
@@ -485,7 +634,7 @@ export default function ConfiguracoesNDE() {
         </div>
       </div>
 
-      {/* SEÇÃO COM DESTAQUE: AUTOMAÇÃO ASSISTIDA DA VIRADA DE SEMESTRE (FASE 3) */}
+      {/* SEÇÃO COM DESTAQUE: AUTOMAÇÃO ASSISTIDA DA VIRADA DE SEMESTRE */}
       <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-slate-50 shadow-md">
         <CardContent className="p-5 sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -494,12 +643,12 @@ export default function ConfiguracoesNDE() {
                 <CalendarFold className="h-6 w-6" />
               </div>
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
                     Virada de Semestre Letivo Assistida
                   </h2>
                   <Badge className="bg-blue-600 text-white text-[10px] font-semibold">
-                    Fase 3 · RF-012
+                    Automação Integrada
                   </Badge>
                   {config?.ultima_virada_semestre && (
                     <Badge
@@ -561,7 +710,7 @@ export default function ConfiguracoesNDE() {
                 {!isAdmin && (
                   <TooltipContent>
                     <p className="text-xs">
-                      Apenas Administradores (Tati) podem executar a virada de semestre.
+                      Apenas Administradores podem executar a virada de semestre.
                     </p>
                   </TooltipContent>
                 )}
@@ -571,14 +720,15 @@ export default function ConfiguracoesNDE() {
         </CardContent>
       </Card>
 
-      {/* Card 1: Configuração Global */}
+      {/* Card 1: Configuração Global Parametrizável (com Coordenadora e CRP) */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
-            Configuração Global do Curso
+            Parametrização Autônoma do Curso & Despachos
           </CardTitle>
           <CardDescription className="text-xs text-slate-500">
-            Parâmetros utilizados em cálculos de balanço semestral e regras de despacho
+            Semestre letivo, metas de integralização e assinatura oficial da coordenação utilizada
+            nos despachos oficiais
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -596,7 +746,7 @@ export default function ConfiguracoesNDE() {
                   value={semestreLetivo}
                   onChange={(e) => setSemestreLetivo(e.target.value)}
                   placeholder="Ex: 2026.2"
-                  className="text-xs font-semibold"
+                  className="text-xs font-semibold font-mono"
                 />
                 <p className="text-[11px] text-slate-500">
                   Usado como referência para apuração do balanço semestral.
@@ -640,6 +790,47 @@ export default function ConfiguracoesNDE() {
               </div>
             </div>
 
+            {/* Campos novos: Coordenadora e CRP */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2 border-t border-slate-100">
+              <div className="space-y-1.5">
+                <Label htmlFor="coord-nome" className="text-xs font-semibold text-slate-700">
+                  Nome da Coordenadora do Curso *
+                </Label>
+                <Input
+                  id="coord-nome"
+                  type="text"
+                  required
+                  disabled={!isAdmin}
+                  value={nomeCoordenadora}
+                  onChange={(e) => setNomeCoordenadora(e.target.value)}
+                  placeholder="Ex: Roberta Andrea de Oliveira"
+                  className="text-xs font-medium"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Nome oficial exibido no cabeçalho dos despachos de deferimento.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="coord-crp" className="text-xs font-semibold text-slate-700">
+                  Registro Profissional (CRP) *
+                </Label>
+                <Input
+                  id="coord-crp"
+                  type="text"
+                  required
+                  disabled={!isAdmin}
+                  value={crpCoordenadora}
+                  onChange={(e) => setCrpCoordenadora(e.target.value)}
+                  placeholder="Ex: 06/77114"
+                  className="text-xs font-mono font-medium"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Número de inscrição no Conselho Regional de Psicologia da signatária.
+                </p>
+              </div>
+            </div>
+
             <div className="flex justify-end pt-2">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -674,7 +865,7 @@ export default function ConfiguracoesNDE() {
         </CardContent>
       </Card>
 
-      {/* Card 2: Categorias e Regulamento de Tetos */}
+      {/* Card 2: Categorias e Regulamento de Tetos (CRUD COMPLETO) */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pb-3">
           <div>
@@ -801,6 +992,316 @@ export default function ConfiguracoesNDE() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Card 3: CÓPIAS DE SEGURANÇA (BACKUP & RESTAURAÇÃO JSON) E DADOS DE DEMONSTRAÇÃO */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Bloco Backup JSON */}
+        <Card className="border-slate-200 shadow-sm flex flex-col justify-between">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-[#1d4ed8]">
+                <Database className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="font-['Outfit'] text-base font-bold text-[#0f2b48]">
+                  Cópia de Segurança em JSON
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-500">
+                  Exportação integral e restauração de emergência de todos os dados do sistema
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Exporte uma cópia completa de segurança contendo estudantes, tabela de categorias,
+              lançamentos imutáveis e parâmetros de configuração global em formato JSON padronizado.
+            </p>
+
+            <div className="rounded-md border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+              <div className="flex items-center justify-between">
+                <span>Registros exportados:</span>
+                <span className="font-semibold text-slate-800">
+                  Alunos, Categorias, Lançamentos e Config
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Formato de saída:</span>
+                <span className="font-mono text-slate-800 font-semibold">.JSON (UTF-8)</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              {/* Botão Baixar Backup */}
+              <Button
+                type="button"
+                onClick={handleExportarBackup}
+                disabled={exportandoBackup}
+                className="bg-[#0f2b48] hover:bg-[#1e40af] text-white text-xs font-semibold"
+              >
+                {exportandoBackup ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Gerando Backup...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                    Baixar Backup Completo (JSON)
+                  </>
+                )}
+              </Button>
+
+              {/* Botão Restaurar Backup (Abre seletor de arquivo) */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handleSelecionarArquivoBackup}
+              />
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!isAdmin}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-xs text-slate-700 border-slate-300 hover:bg-slate-50"
+                    >
+                      <Upload className="mr-1.5 h-3.5 w-3.5 text-blue-600" />
+                      Restaurar a Partir de JSON...
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!isAdmin && (
+                  <TooltipContent>
+                    <p className="text-xs">Apenas Administradores podem restaurar dados.</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Bloco Restaurar Dados de Demonstração (Seed FAUSP) */}
+        <Card className="border-slate-200 shadow-sm flex flex-col justify-between">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
+                <RotateCcw className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="font-['Outfit'] text-base font-bold text-[#0f2b48]">
+                  Restaurar Dados de Demonstração
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-500">
+                  Repõe os estudantes, categorias e lançamentos oficiais de demonstração
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Restaura a base de demonstração padrão do curso de Psicologia FAUSP (Mariana, Lucas,
+              Beatriz, Felipe e Camila), as 5 categorias do regulamento e os lançamentos com
+              estornos didáticos para testes e homologação.
+            </p>
+
+            <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold block">Atenção — Operação Sensível:</span>
+                Esta operação requer dupla confirmação de segurança antes da execução e redefinirá
+                os registros de demonstração.
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!isAdmin || restaurandoDemo}
+                      onClick={() => setIsModalDemoOpen1(true)}
+                      className="border-amber-300 text-amber-900 hover:bg-amber-50 text-xs font-semibold"
+                    >
+                      {restaurandoDemo ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Restaurando Demo...
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="mr-1.5 h-3.5 w-3.5 text-amber-700" />
+                          Restaurar Dados de Demonstração...
+                        </>
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!isAdmin && (
+                  <TooltipContent>
+                    <p className="text-xs">Apenas Administradores podem executar esta ação.</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* MODAL DE CONFIRMAÇÃO: RESTAURAR BACKUP JSON */}
+      {arquivoBackupSelecionado && (
+        <Dialog open={isModalRestaurarBackupOpen} onOpenChange={setIsModalRestaurarBackupOpen}>
+          <DialogContent className="bg-white max-w-lg">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-red-600 mb-1">
+                <ShieldAlert className="h-5 w-5" />
+                <DialogTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
+                  Confirmar Restauração de Backup JSON?
+                </DialogTitle>
+              </div>
+              <DialogDescription className="text-xs text-slate-500">
+                Arquivo selecionado:{' '}
+                <strong className="font-mono text-slate-700">{nomeArquivoJson}</strong>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs">
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 leading-relaxed font-medium">
+                ⚠️ <strong>AVISO IMPORTANTE:</strong> A restauração é uma operação de recuperação
+                que substitui ou sincroniza os dados cadastrais (alunos, categorias NDE e
+                configurações). Lançamentos compatíveis serão importados.
+              </div>
+
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+                <span className="font-bold text-slate-800 block text-xs">Conteúdo do Arquivo:</span>
+                <div className="flex justify-between text-slate-600">
+                  <span>Semestre no arquivo:</span>
+                  <strong className="font-mono text-slate-900">
+                    {arquivoBackupSelecionado.configuracao?.semestre_letivo_atual || '—'}
+                  </strong>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Estudantes:</span>
+                  <strong className="text-slate-900">
+                    {arquivoBackupSelecionado.alunos?.length || 0}
+                  </strong>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Categorias NDE:</span>
+                  <strong className="text-slate-900">
+                    {arquivoBackupSelecionado.categorias?.length || 0}
+                  </strong>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Lançamentos no backup:</span>
+                  <strong className="text-slate-900">
+                    {arquivoBackupSelecionado.lancamentos?.length || 0}
+                  </strong>
+                </div>
+              </div>
+
+              {restaurandoBackup && (
+                <div className="space-y-2 pt-2">
+                  <Progress value={progressoRestauracao} className="h-2" />
+                  <p className="text-[11px] text-slate-500 text-center font-mono">
+                    {progressoRestauracaoTexto}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={restaurandoBackup}
+                onClick={() => {
+                  setIsModalRestaurarBackupOpen(false)
+                  setArquivoBackupSelecionado(null)
+                }}
+                className="text-xs"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={restaurandoBackup}
+                onClick={handleExecutarRestauracaoBackup}
+                className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+              >
+                {restaurandoBackup ? 'Restaurando...' : 'Sim, Substituir e Restaurar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* MODAL DUPLA CONFIRMAÇÃO 1: RESTAURAR DEMO */}
+      <AlertDialog open={isModalDemoOpen1} onOpenChange={setIsModalDemoOpen1}>
+        <AlertDialogContent className="bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
+              Passo 1/2: Restaurar Dados de Demonstração?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600 leading-relaxed">
+              Você está prestes a restaurar a base didática de exemplo da FAUSP (5 estudantes,
+              categorias padrão e lançamentos com estorno).
+              <br />
+              <br />
+              Deseja avançar para a confirmação definitiva?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setIsModalDemoOpen1(false)
+                setIsModalDemoOpen2(true)
+              }}
+              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+            >
+              Continuar para Confirmação Final
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* MODAL DUPLA CONFIRMAÇÃO 2: RESTAURAR DEMO */}
+      <AlertDialog open={isModalDemoOpen2} onOpenChange={setIsModalDemoOpen2}>
+        <AlertDialogContent className="bg-white border-2 border-red-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-['Outfit'] text-lg font-bold text-red-700 flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5" />
+              Passo 2/2: Confirmar Sobrescrita de Dados Demo
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600 leading-relaxed space-y-2">
+              <p>
+                <strong>CONFIRMAÇÃO FINAL:</strong> Esta ação reporá os registros dos estudantes da
+                demonstração e parâmetros NDE originais.
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Tem certeza de que deseja prosseguir agora?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Voltar / Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmarRestauracaoDemoFinal}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+            >
+              Confirmar Restauração Demo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal Criar / Editar Categoria */}
       <Dialog open={isCatModalOpen} onOpenChange={setIsCatModalOpen}>
@@ -935,11 +1436,11 @@ export default function ConfiguracoesNDE() {
         </AlertDialog>
       )}
 
-      {/* MODAL: AUTOMAÇÃO ASSISTIDA DA VIRADA DE SEMESTRE (FASE 3) */}
+      {/* MODAL: AUTOMAÇÃO ASSISTIDA DA VIRADA DE SEMESTRE */}
       <Dialog
         open={isViradaModalOpen}
         onOpenChange={(open) => {
-          if (!open && viradaEtapa === 'executando') return // Não fecha durante execução
+          if (!open && viradaEtapa === 'executando') return
           setIsViradaModalOpen(open)
         }}
       >
@@ -1115,7 +1616,7 @@ export default function ConfiguracoesNDE() {
             </div>
           )}
 
-          {/* ETAPA 2: PRÉ-VISUALIZAÇÃO DO IMPACTO COM EXCLUSÕES SELETIVAS */}
+          {/* ETAPA 2: PRÉ-VISUALIZAÇÃO */}
           {viradaEtapa === 'preview' && (
             <div className="space-y-4 py-2">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
@@ -1159,7 +1660,7 @@ export default function ConfiguracoesNDE() {
                 </div>
               </div>
 
-              {/* Contadores da pré-visualização */}
+              {/* Contadores */}
               <div className="grid grid-cols-3 gap-2.5">
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-2.5 text-center">
                   <span className="text-[11px] text-slate-500 block">Total de Alunos</span>
@@ -1192,7 +1693,7 @@ export default function ConfiguracoesNDE() {
                 </div>
               )}
 
-              {/* Tabela de Estudantes para Prévia */}
+              {/* Tabela de Estudantes */}
               <div className="max-h-[340px] overflow-y-auto rounded-md border border-slate-200">
                 <table className="w-full text-left text-xs">
                   <thead className="sticky top-0 bg-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-600 border-b border-slate-200">
@@ -1312,7 +1813,7 @@ export default function ConfiguracoesNDE() {
             </div>
           )}
 
-          {/* ETAPA 3: PROCESSANDO VIRADA (BARRA DE PROGRESSO) */}
+          {/* ETAPA 3: PROCESSANDO */}
           {viradaEtapa === 'executando' && (
             <div className="py-8 px-4 text-center space-y-5">
               <div className="flex h-14 w-14 mx-auto items-center justify-center rounded-2xl bg-blue-100 text-[#1d4ed8] shadow-inner">
@@ -1342,7 +1843,7 @@ export default function ConfiguracoesNDE() {
             </div>
           )}
 
-          {/* ETAPA 4: RESUMO FINAL DA VIRADA CONCLUÍDA */}
+          {/* ETAPA 4: RESUMO FINAL */}
           {viradaEtapa === 'resumo' && resultadoVirada && (
             <div className="space-y-5 py-4">
               <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-4 text-center space-y-2">

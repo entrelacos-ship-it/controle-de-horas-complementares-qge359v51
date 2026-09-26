@@ -16,6 +16,8 @@ export interface ConfiguracaoGlobal {
   semestre_letivo_atual: string
   minimo_exigido_semestre: number
   meta_curso: number
+  nome_da_coordenadora?: string
+  crp_coordenadora?: string
   ultima_virada_semestre?: string
   ultima_virada_data?: string
   ultima_virada_alunos_promovidos?: number

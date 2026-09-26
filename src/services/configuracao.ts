@@ -14,6 +14,8 @@ export async function getConfiguracaoGlobal(): Promise<ConfiguracaoGlobal> {
     semestre_letivo_atual: '2026.2',
     minimo_exigido_semestre: 20,
     meta_curso: 200,
+    nome_da_coordenadora: 'Roberta Andrea de Oliveira',
+    crp_coordenadora: '06/77114',
   }
 }
 
