@@ -48,5 +48,17 @@ export function executarTestesAuth(): { todosPassaram: boolean; resultados: stri
     throw new Error('CT-AUTH-05 falhou: validação de token de verificação incorreta')
   }
 
+  // CT-AUTH-06: Validação de formato de e-mail institucional na recuperação de senha
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const emailValido = emailRegex.test('entre.lacos.psi.cursos@gmail.com')
+  const emailValido2 = emailRegex.test('tati@fausp.app')
+  const emailInvalido = emailRegex.test('email_sem_arroba')
+  const emailInvalido2 = emailRegex.test('teste@')
+  if (emailValido && emailValido2 && !emailInvalido && !emailInvalido2) {
+    resultados.push('CT-AUTH-06: Validação sintática de formato de e-mail para recuperação passou.')
+  } else {
+    throw new Error('CT-AUTH-06 falhou: regex de validação de e-mail com comportamento incorreto')
+  }
+
   return { todosPassaram: true, resultados }
 }

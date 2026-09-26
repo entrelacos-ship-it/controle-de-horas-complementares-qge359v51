@@ -1,7 +1,16 @@
 import React, { useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { Lock, AlertCircle, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react'
+import {
+  Lock,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  ArrowLeft,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+} from 'lucide-react'
 import { LogoFausp } from '@/components/LogoFausp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +42,7 @@ export default function ResetPassword() {
 
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -164,14 +174,22 @@ export default function ResetPassword() {
                     <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                     <Input
                       id="pass"
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       autoComplete="new-password"
                       required
                       placeholder="Mínimo 8 caracteres"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-9 text-sm"
+                      className="pl-9 pr-9 text-sm focus-visible:ring-[#1d4ed8]"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none"
+                      aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
 
@@ -183,13 +201,13 @@ export default function ResetPassword() {
                     <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                     <Input
                       id="passConf"
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       autoComplete="new-password"
                       required
                       placeholder="Repita a nova senha"
                       value={passwordConfirm}
                       onChange={(e) => setPasswordConfirm(e.target.value)}
-                      className="pl-9 text-sm"
+                      className="pl-9 text-sm focus-visible:ring-[#1d4ed8]"
                     />
                   </div>
                 </div>
@@ -223,9 +241,15 @@ export default function ResetPassword() {
           )}
         </div>
 
-        <p className="mt-4 text-center text-xs text-slate-400">
-          Acesso restrito à coordenação do curso de Psicologia.
-        </p>
+        <div className="mt-5 text-center space-y-1">
+          <p className="flex items-center justify-center gap-1.5 text-xs text-slate-300 font-medium">
+            <ShieldCheck className="h-3.5 w-3.5 text-blue-300" />
+            Acesso restrito à coordenação do curso.
+          </p>
+          <p className="text-[11px] text-slate-400">
+            Faculdade Unida de São Paulo — FAUSP · Psicologia
+          </p>
+        </div>
       </div>
     </div>
   )

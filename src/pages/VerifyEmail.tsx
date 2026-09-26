@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { CheckCircle2, AlertCircle, Loader2, Mail, ArrowLeft } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Loader2, Mail, ArrowLeft, ShieldCheck } from 'lucide-react'
 import { LogoFausp } from '@/components/LogoFausp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -196,9 +196,15 @@ export default function VerifyEmail() {
           )}
         </div>
 
-        <p className="mt-4 text-center text-xs text-slate-400">
-          Acesso restrito à coordenação do curso de Psicologia.
-        </p>
+        <div className="mt-5 text-center space-y-1">
+          <p className="flex items-center justify-center gap-1.5 text-xs text-slate-300 font-medium">
+            <ShieldCheck className="h-3.5 w-3.5 text-blue-300" />
+            Acesso restrito à coordenação do curso.
+          </p>
+          <p className="text-[11px] text-slate-400">
+            Faculdade Unida de São Paulo — FAUSP · Psicologia
+          </p>
+        </div>
       </div>
     </div>
   )
