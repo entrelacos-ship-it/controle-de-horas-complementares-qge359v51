@@ -60,7 +60,9 @@ export default function AlunosList() {
   const [isNovoAlunoOpen, setIsNovoAlunoOpen] = useState(false)
   const [novoNome, setNovoNome] = useState('')
   const [novaMatricula, setNovaMatricula] = useState('')
-  const [novoTurno, setNovoTurno] = useState<'Matutino' | 'Noturno'>('Matutino')
+  const [novoTurno, setNovoTurno] = useState<'Matutino' | 'Vespertino' | 'Noturno' | 'Especial'>(
+    'Matutino',
+  )
   const [novoSemestre, setNovoSemestre] = useState<number>(1)
   const [novoPeriodo, setNovoPeriodo] = useState('2026.2')
   const [novoEmail, setNovoEmail] = useState('')
@@ -289,11 +291,17 @@ export default function AlunosList() {
                     <select
                       id="turno"
                       value={novoTurno}
-                      onChange={(e) => setNovoTurno(e.target.value as 'Matutino' | 'Noturno')}
+                      onChange={(e) =>
+                        setNovoTurno(
+                          e.target.value as 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial',
+                        )
+                      }
                       className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs shadow-xs focus:border-[#1d4ed8] focus:outline-none"
                     >
                       <option value="Matutino">Matutino</option>
+                      <option value="Vespertino">Vespertino</option>
                       <option value="Noturno">Noturno</option>
+                      <option value="Especial">Especial</option>
                     </select>
                   </div>
                 </div>
@@ -390,7 +398,7 @@ export default function AlunosList() {
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-xs font-medium text-slate-600">Turno:</span>
               <div className="flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
-                {['Todos', 'Matutino', 'Noturno'].map((t) => (
+                {['Todos', 'Matutino', 'Vespertino', 'Noturno', 'Especial'].map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -462,7 +470,11 @@ export default function AlunosList() {
                           className={
                             aluno.turno === 'Matutino'
                               ? 'bg-amber-50 text-amber-800 border-amber-200 text-[11px]'
-                              : 'bg-indigo-50 text-indigo-800 border-indigo-200 text-[11px]'
+                              : aluno.turno === 'Vespertino'
+                                ? 'bg-orange-50 text-orange-800 border-orange-200 text-[11px]'
+                                : aluno.turno === 'Noturno'
+                                  ? 'bg-indigo-50 text-indigo-800 border-indigo-200 text-[11px]'
+                                  : 'bg-purple-50 text-purple-800 border-purple-200 text-[11px]'
                           }
                         >
                           {aluno.turno}

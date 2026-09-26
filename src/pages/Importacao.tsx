@@ -241,7 +241,7 @@ export default function Importacao() {
       {
         matricula: string
         nome: string
-        turno: 'Matutino' | 'Noturno'
+        turno: 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial'
         semestre_atual: number
         periodo_entrada: string
         email: string

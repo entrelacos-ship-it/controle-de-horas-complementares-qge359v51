@@ -295,7 +295,7 @@ export default function Turmas() {
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-700">Turno:</span>
               <div className="flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
-                {['Todos', 'Matutino', 'Noturno'].map((t) => (
+                {['Todos', 'Matutino', 'Vespertino', 'Noturno', 'Especial'].map((t) => (
                   <button
                     key={t}
                     type="button"

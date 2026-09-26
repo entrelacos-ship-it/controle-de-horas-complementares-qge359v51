@@ -15,6 +15,9 @@ export interface ConfiguracaoGlobal {
   semestre_letivo_atual: string
   minimo_exigido_semestre: number
   meta_curso: number
+  ultima_virada_semestre?: string
+  ultima_virada_data?: string
+  ultima_virada_alunos_promovidos?: number
   created?: string
   updated?: string
 }
@@ -29,11 +32,13 @@ export interface Categoria {
   updated?: string
 }
 
+export type TurnoAluno = 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial'
+
 export interface Aluno {
   id: string
   matricula: string
   nome: string
-  turno: 'Matutino' | 'Noturno'
+  turno: TurnoAluno
   semestre_atual: number // 1 to 10
   periodo_entrada: string
   email: string

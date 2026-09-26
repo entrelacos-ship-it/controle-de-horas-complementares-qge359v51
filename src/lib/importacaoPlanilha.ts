@@ -13,7 +13,7 @@ export interface LinhaImportacaoValidada {
   // Dados do aluno
   nome: string
   matricula: string
-  turno: 'Matutino' | 'Noturno'
+  turno: 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial'
   semestreAtual: number
   periodoEntrada: string
   email: string
@@ -417,9 +417,13 @@ export function processarPlanilhaExcel(params: {
     }
 
     // Turno
-    let turno: 'Matutino' | 'Noturno' = 'Matutino'
+    let turno: 'Matutino' | 'Vespertino' | 'Noturno' | 'Especial' = 'Matutino'
     const turnoStr = normalizarChave(String(turnoVal))
-    if (turnoStr.includes('not') || turnoStr.includes('noite') || turnoStr === 'n') {
+    if (turnoStr.includes('especial') || turnoStr === 'esp' || turnoStr === 'e') {
+      turno = 'Especial'
+    } else if (turnoStr.includes('vesp') || turnoStr.includes('tarde') || turnoStr === 'v') {
+      turno = 'Vespertino'
+    } else if (turnoStr.includes('not') || turnoStr.includes('noite') || turnoStr === 'n') {
       turno = 'Noturno'
     } else if (turnoStr.includes('mat') || turnoStr.includes('manha') || turnoStr === 'm') {
       turno = 'Matutino'

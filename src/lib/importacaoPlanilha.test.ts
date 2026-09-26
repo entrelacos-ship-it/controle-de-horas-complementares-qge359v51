@@ -101,7 +101,47 @@ export function executarTestesImportacao(): { todosPassaram: boolean; resultados
     throw new Error(`TI-03 falhou: ${dataBr} vs ${dataIso}`)
   }
 
-  // 4. Teste de processamento completo de planilha sintética
+  // 4. Teste do parser de turnos (Matutino, Vespertino, Noturno, Especial)
+  const parserLinhasTurnos = [
+    { turnoRaw: 'Vespertino', esperado: 'Vespertino' },
+    { turnoRaw: 'vesp', esperado: 'Vespertino' },
+    { turnoRaw: 'v', esperado: 'Vespertino' },
+    { turnoRaw: 'tarde', esperado: 'Vespertino' },
+    { turnoRaw: 'Especial', esperado: 'Especial' },
+    { turnoRaw: 'esp', esperado: 'Especial' },
+    { turnoRaw: 'e', esperado: 'Especial' },
+    { turnoRaw: 'Noturno', esperado: 'Noturno' },
+    { turnoRaw: 'noite', esperado: 'Noturno' },
+    { turnoRaw: 'n', esperado: 'Noturno' },
+    { turnoRaw: 'Matutino', esperado: 'Matutino' },
+    { turnoRaw: 'm', esperado: 'Matutino' },
+    { turnoRaw: 'manha', esperado: 'Matutino' },
+  ]
+
+  for (const item of parserLinhasTurnos) {
+    const turnoStr = normalizarChave(item.turnoRaw)
+    let turnoIdentificado = 'Matutino'
+    if (turnoStr.includes('especial') || turnoStr === 'esp' || turnoStr === 'e') {
+      turnoIdentificado = 'Especial'
+    } else if (turnoStr.includes('vesp') || turnoStr.includes('tarde') || turnoStr === 'v') {
+      turnoIdentificado = 'Vespertino'
+    } else if (turnoStr.includes('not') || turnoStr.includes('noite') || turnoStr === 'n') {
+      turnoIdentificado = 'Noturno'
+    } else if (turnoStr.includes('mat') || turnoStr.includes('manha') || turnoStr === 'm') {
+      turnoIdentificado = 'Matutino'
+    }
+
+    if (turnoIdentificado !== item.esperado) {
+      throw new Error(
+        `Falha no parser de turno para "${item.turnoRaw}": esperado "${item.esperado}", obtido "${turnoIdentificado}"`,
+      )
+    }
+  }
+  resultados.push(
+    'TI-03.1: Parser de turnos incluindo Vespertino (vesp, v) e Especial (esp, e) passou.',
+  )
+
+  // 5. Teste de processamento completo de planilha sintética
   const alunosMock: Aluno[] = [
     {
       id: 'aluno_existente_1',

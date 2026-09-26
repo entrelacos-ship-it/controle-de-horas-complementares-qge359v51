@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-26T12:48:59.047Z",
+  "generatedAt": "2026-09-26T13:29:56.768Z",
   "collections": [
     {
       "name": "users",
@@ -93,6 +93,24 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "ultima_virada_semestre",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultima_virada_data",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultima_virada_alunos_promovidos",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -177,7 +195,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Matutino", "Noturno"]
+          "selectValues": ["Matutino", "Vespertino", "Noturno", "Especial"]
         },
         {
           "name": "semestre_atual",

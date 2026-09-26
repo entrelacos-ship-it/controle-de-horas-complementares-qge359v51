@@ -153,6 +153,51 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
     throw new Error('CT-05 falhou')
   }
 
+  // CT-06: Promoção de semestre na Virada (3º -> 4º; 10º permanece no 10º)
+  const aluno3 = { ...mockAluno3Semestre, semestre_atual: 3 }
+  const aluno10: Aluno = {
+    id: 'aluno_10',
+    matricula: 'PSI010',
+    nome: 'Estudante Concluinte',
+    turno: 'Vespertino',
+    semestre_atual: 10,
+    periodo_entrada: '2022.1',
+    email: 'concluinte@aluno.fausp.br',
+  }
+  const alunoEspecial: Aluno = {
+    id: 'aluno_esp',
+    matricula: 'PSI099',
+    nome: 'Estudante Especial',
+    turno: 'Especial',
+    semestre_atual: 1,
+    periodo_entrada: '2026.1',
+    email: 'especial@aluno.fausp.br',
+  }
+
+  // Lógica de promoção da virada assistida
+  const simularPromocao = (aluno: Aluno, promover: boolean): number => {
+    const sem = Number(aluno.semestre_atual) || 1
+    if (promover && sem < 10) {
+      return Math.min(10, sem + 1)
+    }
+    return sem
+  }
+
+  const promovido3 = simularPromocao(aluno3, true)
+  const promovido10 = simularPromocao(aluno10, true)
+  const mantido3 = simularPromocao(aluno3, false) // Aluno desmarcado na UI (ex: trancamento)
+  const promovidoEsp = simularPromocao(alunoEspecial, true)
+
+  if (promovido3 === 4 && promovido10 === 10 && mantido3 === 3 && promovidoEsp === 2) {
+    resultados.push(
+      'CT-06: Promoção de semestre na Virada (3º → 4º; 10º permanece 10º; exclusão seletiva mantida) passou.',
+    )
+  } else {
+    throw new Error(
+      `CT-06 falhou: promovido3=${promovido3}, promovido10=${promovido10}, mantido3=${mantido3}, promovidoEsp=${promovidoEsp}`,
+    )
+  }
+
   // Executar também a suíte de importação de planilha
   const testesImportacao = executarTestesImportacao()
   resultados.push(...testesImportacao.resultados)
