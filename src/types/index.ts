@@ -89,3 +89,65 @@ export interface AlunoProgresso {
   categoriasBloqueadasIds: Set<string>
   totalEstornos: number
 }
+
+export type AtaNdeStatus = 'HOMOLOGADA' | 'RASCUNHO' | 'REVOGADA'
+
+export interface AtaNdeBalancoItem {
+  matricula: string
+  nome: string
+  turno: TurnoAluno
+  semestreAtual: number
+  horasSemestre: number
+  horasAcumuladasTotal: number
+  cumpreMetaSemestral: boolean
+  aptoColacao: boolean
+}
+
+export interface AtaNde {
+  id: string
+  numero_ata: string
+  semestre_letivo: string
+  data_homologacao: string
+  status: AtaNdeStatus | string
+  total_alunos_avaliados: number
+  total_concluintes_aptos: number
+  total_cumpriram_meta: number
+  total_alerta_pedagogico: number
+  total_horas_deferidas: number
+  presidente_coordenadora: string
+  crp_coordenadora: string
+  resumo_deliberacao: string
+  dados_balanco_json?: {
+    itens?: AtaNdeBalancoItem[]
+    metaSemestral?: number
+    metaCurso?: number
+    turnos?: string[]
+  } | null
+  created: string
+  updated: string
+}
+
+export type TipoAuditoriaEvento =
+  | 'HOMOLOGACAO_SEMESTRE'
+  | 'VIRADA_SEMESTRE'
+  | 'IMPORTACAO_LEGADA'
+  | 'LANCAMENTO_HORAS'
+  | 'ESTORNO_HORAS'
+  | 'CONFIG_NDE_ALTERADA'
+  | 'ALUNO_CRIADO'
+  | 'ALUNO_ATUALIZADO'
+  | 'CATEGORIA_ATUALIZADA'
+
+export interface AuditoriaLog {
+  id: string
+  tipo_evento: TipoAuditoriaEvento | string
+  ator_nome: string
+  ator_email: string
+  aluno_nome?: string
+  aluno_matricula?: string
+  semestre_letivo?: string
+  descricao: string
+  detalhes_json?: Record<string, unknown> | null
+  created: string
+  updated: string
+}

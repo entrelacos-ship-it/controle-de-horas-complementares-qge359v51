@@ -502,6 +502,20 @@ export default function Importacao() {
     // Recarregar os dados do banco para que próximas operações estejam em sincronia
     carregarDadosDoBanco()
 
+    // Registra na trilha global de auditoria
+    try {
+      const { registrarLogAuditoria } = await import('@/services/auditoria')
+      registrarLogAuditoria({
+        tipo_evento: 'IMPORTACAO_LEGADA',
+        ator_nome: user?.name || 'Coordenação NDE',
+        ator_email: user?.email,
+        semestre_letivo: configGlobal?.semestre_letivo_atual || '2026.2',
+        descricao: `Efetivação de Carga Legada via planilha "${nomeArquivo}" — ${lancamentosCriados} lançamentos criados, ${alunosCriados + alunosAtualizados} alunos processados (${totalAlunosConciliadosNoMomento} conciliados, ${totalAlunosDivergentesNoMomento} divergentes).`,
+      })
+    } catch (e) {
+      console.warn('Erro ao registrar log de importação na auditoria:', e)
+    }
+
     toast({
       title: 'Importação concluída com sucesso!',
       description: `${lancamentosCriados} lançamentos e ${alunosCriados + alunosAtualizados} alunos processados (${totalAlunosConciliadosNoMomento} conciliados).`,
@@ -573,6 +587,19 @@ export default function Importacao() {
       // Reprocessa planilha com novas categorias
       if (arquivoBuffer) {
         reprocessarArquivo(arquivoBuffer, mapeamentoManualCategorias, catsAtualizadas)
+      }
+
+      // Registra na trilha global de auditoria
+      try {
+        const { registrarLogAuditoria } = await import('@/services/auditoria')
+        registrarLogAuditoria({
+          tipo_evento: 'CONFIGURACAO_ALTERADA',
+          ator_nome: user?.name || 'Coordenação NDE',
+          ator_email: user?.email,
+          descricao: `Sincronização de regulamento NDE a partir de planilha: ${categoriasCriadas} novas categorias criadas e ${categoriasAtualizadas} atualizadas.`,
+        })
+      } catch (e) {
+        console.warn('Erro ao registrar log de configuração:', e)
       }
 
       toast({
@@ -1745,7 +1772,9 @@ export default function Importacao() {
                       <Button
                         size="sm"
                         onClick={() => setDialogConfirmacaoAberto(true)}
-                        disabled={efetivando || dadosConciliacao.resumo.totalHorasLote === 0}
+                        disabled={
+                          efetivando || (dadosConciliacao?.resumo?.totalHorasLote ?? 0) === 0
+                        }
                         className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-sm"
                       >
                         Prosseguir para Efetivação
@@ -1776,7 +1805,9 @@ export default function Importacao() {
                   <div className="flex items-center gap-2">
                     <Button
                       onClick={() => setEtapa(2)}
-                      disabled={resumoValidacao.totalLancamentosValidos === 0}
+                      disabled={
+                        !resumoValidacao || (resumoValidacao?.totalLancamentosValidos ?? 0) === 0
+                      }
                       className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-sm"
                     >
                       Avançar para Conciliação de Saldos
@@ -2035,10 +2066,12 @@ export default function Importacao() {
                     <Button
                       size="sm"
                       onClick={() => setEtapa(2)}
-                      disabled={resumoValidacao.totalLancamentosValidos === 0}
+                      disabled={
+                        !resumoValidacao || (resumoValidacao?.totalLancamentosValidos ?? 0) === 0
+                      }
                       className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold shadow-sm"
                     >
-                      Ir para Conciliação de Saldos (Etapa 2)
+                      Ir para Conciliação de Saldos (Etapa 2){' '}
                       <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -2190,19 +2223,19 @@ export default function Importacao() {
               <div className="flex justify-between">
                 <span className="text-slate-600">Alunos no lote:</span>
                 <span className="font-bold text-slate-900">
-                  {dadosConciliacao.resumo.totalAlunos}
+                  {dadosConciliacao?.resumo?.totalAlunos ?? 0}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Horas ativas a gravar:</span>
                 <span className="font-bold text-[#1d4ed8]">
-                  {dadosConciliacao.resumo.totalHorasLote}h
+                  {dadosConciliacao?.resumo?.totalHorasLote ?? 0}h
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Saldo total projetado pós-carga:</span>
                 <span className="font-bold text-slate-900">
-                  {dadosConciliacao.resumo.totalHorasProjetadas}h
+                  {dadosConciliacao?.resumo?.totalHorasProjetadas ?? 0}h
                 </span>
               </div>
               <div className="flex justify-between">
@@ -2229,7 +2262,7 @@ export default function Importacao() {
                   Conciliados
                 </span>
                 <span className="font-['Outfit'] text-xl font-bold text-emerald-700">
-                  {dadosConciliacao.resumo.totalConciliados}
+                  {dadosConciliacao?.resumo?.totalConciliados ?? 0}
                 </span>
               </div>
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-2">
@@ -2237,7 +2270,7 @@ export default function Importacao() {
                   Divergentes
                 </span>
                 <span className="font-['Outfit'] text-xl font-bold text-amber-700">
-                  {dadosConciliacao.resumo.totalDivergentes}
+                  {dadosConciliacao?.resumo?.totalDivergentes ?? 0}
                 </span>
               </div>
               <div className="rounded-lg bg-slate-100 border border-slate-200 p-2">
@@ -2245,17 +2278,19 @@ export default function Importacao() {
                   Sem Referência
                 </span>
                 <span className="font-['Outfit'] text-xl font-bold text-slate-700">
-                  {dadosConciliacao.resumo.totalSemReferencia}
+                  {dadosConciliacao?.resumo?.totalSemReferencia ?? 0}
                 </span>
               </div>
             </div>
 
-            {dadosConciliacao.resumo.totalDivergentes > 0 && (
+            {(dadosConciliacao?.resumo?.totalDivergentes ?? 0) > 0 && (
               <Alert className="border-amber-300 bg-amber-50 text-amber-900 py-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
                 <AlertDescription className="text-[11px] text-amber-800 leading-snug">
                   Existem{' '}
-                  <strong>{dadosConciliacao.resumo.totalDivergentes} alunos com divergência</strong>{' '}
+                  <strong>
+                    {dadosConciliacao?.resumo?.totalDivergentes ?? 0} alunos com divergência
+                  </strong>{' '}
                   entre o saldo projetado e o declarado na planilha. Ao efetivar, a divergência será
                   registrada no campo de observação para fins de auditoria acadêmica.
                 </AlertDescription>

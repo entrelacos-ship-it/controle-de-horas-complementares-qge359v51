@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-26T16:34:05.773Z",
+  "generatedAt": "2026-09-26T17:19:22.548Z",
   "collections": [
     {
       "name": "users",
@@ -330,6 +330,195 @@
         "CREATE INDEX idx_lancamentos_aluno_cat ON lancamentos (aluno_id, categoria_id)",
         "CREATE INDEX idx_lancamentos_created ON lancamentos (created)",
         "CREATE INDEX idx_lancamentos_semestre ON lancamentos (semestre_letivo_atividade)"
+      ]
+    },
+    {
+      "name": "atas_nde",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != '' && @request.auth.role = 'Administrador'",
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "numero_ata",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "semestre_letivo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "data_homologacao",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_alunos_avaliados",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_concluintes_aptos",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_cumpriram_meta",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_alerta_pedagogico",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_horas_deferidas",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "presidente_coordenadora",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "crp_coordenadora",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "resumo_deliberacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "dados_balanco_json",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_atas_nde_semestre ON atas_nde (semestre_letivo)",
+        "CREATE INDEX idx_atas_nde_created ON atas_nde (created)"
+      ]
+    },
+    {
+      "name": "auditoria_logs",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "tipo_evento",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ator_nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ator_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "aluno_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "aluno_matricula",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "semestre_letivo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "detalhes_json",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_auditoria_logs_tipo ON auditoria_logs (tipo_evento)",
+        "CREATE INDEX idx_auditoria_logs_matricula ON auditoria_logs (aluno_matricula)",
+        "CREATE INDEX idx_auditoria_logs_created ON auditoria_logs (created)"
       ]
     }
   ]

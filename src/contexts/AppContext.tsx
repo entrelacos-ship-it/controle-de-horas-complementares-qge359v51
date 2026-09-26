@@ -292,6 +292,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAlunos(als)
       setConfig(cfg)
       persistirNoLocalStorage({ alunos: als, config: cfg })
+
+      // Registra evento na trilha de auditoria
+      try {
+        const { registrarLogAuditoria } = await import('@/services/auditoria')
+        const semestreAnterior = cfg?.semestre_letivo_atual || 'anterior'
+        registrarLogAuditoria({
+          tipo_evento: 'VIRADA_SEMESTRE',
+          ator_nome: 'Roberta Andrea de Oliveira (Coordenação)',
+          semestre_letivo: params.novoSemestreLetivo,
+          descricao: `Virada de Semestre Assistida executada: transição de ${semestreAnterior} para ${params.novoSemestreLetivo} (${res.alunosPromovidos} alunos promovidos).`,
+        })
+      } catch (e) {
+        console.warn('Erro ao registrar log de virada na auditoria:', e)
+      }
+
       return res
     },
     [persistirNoLocalStorage],
@@ -358,9 +373,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
         persistirNoLocalStorage({ lancamentos: atualizados })
         return atualizados
       })
+
+      // Registra evento estrutural na trilha de auditoria
+      try {
+        const { registrarLogAuditoria } = await import('@/services/auditoria')
+        const alunoAlvo = alunos.find((a) => a.id === data.aluno_id)
+        const catAlvo = categorias.find((c) => c.id === data.categoria_id)
+        const isEstorno = Number(data.horas_aceitas) < 0
+        const horasFormatadas = isEstorno
+          ? `Estorno de ${Math.abs(Number(data.horas_aceitas))}h`
+          : `Deferimento de ${data.horas_aceitas}h`
+
+        registrarLogAuditoria({
+          tipo_evento: isEstorno ? 'ESTORNO_REGISTRADO' : 'LANCAMENTO_CRIADO',
+          ator_nome: 'Roberta Andrea de Oliveira (Coordenação)',
+          aluno_nome: alunoAlvo?.nome,
+          aluno_matricula: alunoAlvo?.matricula,
+          semestre_letivo: data.semestre_letivo_atividade,
+          descricao: `${horasFormatadas} em "${catAlvo?.nome || 'Atividade Complementar'}" (${data.semestre_letivo_atividade}) — ${data.observacao || 'Checklist OK'}`,
+        })
+      } catch (e) {
+        console.warn('Erro ao registrar log de lançamento na auditoria:', e)
+      }
+
       return novo
     },
-    [persistirNoLocalStorage],
+    [persistirNoLocalStorage, alunos, categorias],
   )
 
   const salvarConfiguracao = useCallback(
