@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { GraduationCap, CheckCircle2, AlertCircle, Loader2, Mail, ArrowLeft } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Loader2, Mail, ArrowLeft } from 'lucide-react'
+import { LogoFausp } from '@/components/LogoFausp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -70,11 +71,16 @@ export default function VerifyEmail() {
       <div className="w-full max-w-md">
         {/* Header Branding */}
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-xl ring-4 ring-white/10">
-            <GraduationCap className="h-10 w-10" />
+          <div className="mb-3">
+            <LogoFausp
+              variant="circular"
+              theme="dark"
+              size="xl"
+              className="h-20 w-20 shadow-2xl ring-4 ring-white/20 p-2.5"
+            />
           </div>
           <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Controle de Horas
+            Controle de Horas Complementares
           </h1>
           <p className="mt-1 text-sm text-slate-300">Coordenação do Curso de Psicologia — FAUSP</p>
         </div>

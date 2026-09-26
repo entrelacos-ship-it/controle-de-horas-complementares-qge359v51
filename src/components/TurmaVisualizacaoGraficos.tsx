@@ -20,13 +20,13 @@ import {
   BarChart3,
   PieChart as PieIcon,
   Layers,
-  GraduationCap,
   Sparkles,
   Info,
   Calendar,
   Clock,
   CheckCircle2,
   AlertTriangle,
+  Users,
 } from 'lucide-react'
 
 export interface TurmaVisualizacaoGraficosProps {
@@ -314,7 +314,7 @@ export function TurmaVisualizacaoGraficos({
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <CardTitle className="font-['Outfit'] text-sm font-bold text-[#0f2b48] flex items-center gap-1.5">
-                  <GraduationCap className="h-4 w-4 text-[#1d4ed8]" />
+                  <Users className="h-4 w-4 text-[#1d4ed8]" />
                   Distribuição por Turma (Entrada & Turno)
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-500">

@@ -3,7 +3,6 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useApp } from '@/contexts/AppContext'
 import {
-  GraduationCap,
   LayoutDashboard,
   Zap,
   Users,
@@ -22,6 +21,7 @@ import {
   RefreshCw,
   HardDriveDownload,
 } from 'lucide-react'
+import { LogoFausp } from '@/components/LogoFausp'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
@@ -118,9 +118,7 @@ export default function Layout() {
         {/* Brand / Logo Topo */}
         <div className="flex h-20 shrink-0 items-center px-5 border-b border-[#1b3e63]/70">
           <NavLink to="/" className="flex items-center gap-3 transition-opacity hover:opacity-95">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1d4ed8] text-white shadow-md ring-2 ring-white/10">
-              <GraduationCap className="h-6 w-6" />
-            </div>
+            <LogoFausp variant="circular" theme="dark" size="md" className="h-11 w-11" />
             <div className="flex flex-col overflow-hidden">
               <span className="font-['Outfit'] text-[15px] font-bold leading-tight tracking-tight text-white line-clamp-2">
                 Horas Complementares
@@ -228,9 +226,7 @@ export default function Layout() {
         {/* Mobile Header (visível apenas em telas menores) */}
         <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-[#1b3e63] bg-[#0f2b48] px-4 text-white shadow-md md:hidden">
           <NavLink to="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1d4ed8] text-white">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+            <LogoFausp variant="circular" theme="dark" size="sm" className="h-9 w-9" />
             <div className="flex flex-col">
               <span className="font-['Outfit'] text-sm font-bold leading-tight text-white">
                 Horas Complementares
@@ -262,9 +258,7 @@ export default function Layout() {
               {/* Drawer Top */}
               <div className="flex h-16 items-center justify-between border-b border-[#1b3e63] px-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1d4ed8] text-white">
-                    <GraduationCap className="h-5 w-5" />
-                  </div>
+                  <LogoFausp variant="circular" theme="dark" size="sm" className="h-9 w-9" />
                   <span className="font-['Outfit'] text-sm font-bold text-white">
                     Psicologia · FAUSP
                   </span>
@@ -428,11 +422,14 @@ export default function Layout() {
         </main>
 
         {/* Slim institutional footer com indicador de confiança de backup local */}
-        <footer className="border-t border-slate-200 bg-[#e2e8f0] py-2.5 text-xs text-slate-600">
-          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 sm:flex-row">
-            <div>
-              © 2026 Coordenação do Curso de Psicologia — FAUSP · Prof.ª Roberta Andrea de Oliveira
-              (CRP 06/77114)
+        <footer className="border-t border-slate-200 bg-[#e2e8f0] py-3 text-xs text-slate-600">
+          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 sm:flex-row">
+            <div className="flex items-center gap-3">
+              <LogoFausp variant="horizontal" theme="light" size="sm" className="h-5" />
+              <span>
+                © 2026 Coordenação do Curso de Psicologia — FAUSP · Prof.ª Roberta Andrea de
+                Oliveira (CRP 06/77114)
+              </span>
             </div>
             <div className="flex items-center gap-2 text-[11px] text-slate-500">
               <span className="flex items-center gap-1">

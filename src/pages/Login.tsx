@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { GraduationCap, Lock, Mail, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
+import { Lock, Mail, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
+import { LogoFausp } from '@/components/LogoFausp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -45,24 +46,37 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Header Branding */}
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-xl ring-4 ring-white/10">
-            <GraduationCap className="h-10 w-10" />
+          <div className="mb-3">
+            <LogoFausp
+              variant="circular"
+              theme="dark"
+              size="xl"
+              className="h-20 w-20 shadow-2xl ring-4 ring-white/20 p-2.5"
+            />
           </div>
           <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Controle de Horas
+            Controle de Horas Complementares
           </h1>
           <p className="mt-1 text-sm text-slate-300">Coordenação do Curso de Psicologia — FAUSP</p>
         </div>
 
         {/* Card Form */}
         <div className="rounded-xl border border-white/10 bg-white p-6 shadow-2xl text-slate-900 sm:p-8">
-          <div className="mb-5">
-            <h2 className="font-['Outfit'] text-xl font-bold text-[#0f2b48]">
-              Acesso à Coordenação
-            </h2>
-            <p className="text-xs text-slate-500">
-              Informe suas credenciais institucionais para continuar.
-            </p>
+          <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="font-['Outfit'] text-xl font-bold text-[#0f2b48]">
+                Acesso à Coordenação
+              </h2>
+              <p className="text-xs text-slate-500">
+                Informe suas credenciais institucionais para continuar.
+              </p>
+            </div>
+            <LogoFausp
+              variant="horizontal"
+              theme="light"
+              size="sm"
+              className="hidden sm:block opacity-90 h-6"
+            />
           </div>
 
           {successMessage && (

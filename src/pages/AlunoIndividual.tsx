@@ -11,10 +11,10 @@ import {
 } from '@/lib/calculoHoras'
 import { gerarTextoDespacho, formatarDataBr } from '@/lib/formatadorDespacho'
 import { gerarRelatorioAlunoPdf } from '@/lib/exportacaoRelatorioAlunoPdf'
+import { LogoFausp } from '@/components/LogoFausp'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal, AlunoProgresso } from '@/types'
 import {
   ArrowLeft,
-  GraduationCap,
   Ban,
   CheckCircle2,
   XCircle,
@@ -238,9 +238,12 @@ export default function AlunoIndividual() {
         <div className="border-b border-slate-100 bg-slate-50/70 px-6 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#0f2b48] text-white shadow-sm">
-                <GraduationCap className="h-7 w-7" />
-              </div>
+              <LogoFausp
+                variant="circular"
+                theme="light"
+                size="lg"
+                className="h-12 w-12 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xs"
+              />
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="font-['Outfit'] text-2xl font-bold text-[#0f2b48]">

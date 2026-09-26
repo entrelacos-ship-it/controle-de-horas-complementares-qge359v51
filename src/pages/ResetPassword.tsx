@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { GraduationCap, Lock, AlertCircle, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react'
+import { Lock, AlertCircle, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react'
+import { LogoFausp } from '@/components/LogoFausp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -75,11 +76,16 @@ export default function ResetPassword() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-[#0f2b48] via-[#16385c] to-[#0a1e33] p-4 text-slate-100">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-xl ring-4 ring-white/10">
-            <GraduationCap className="h-10 w-10" />
+          <div className="mb-3">
+            <LogoFausp
+              variant="circular"
+              theme="dark"
+              size="xl"
+              className="h-20 w-20 shadow-2xl ring-4 ring-white/20 p-2.5"
+            />
           </div>
           <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Controle de Horas
+            Controle de Horas Complementares
           </h1>
           <p className="mt-1 text-sm text-slate-300">Coordenação do Curso de Psicologia — FAUSP</p>
         </div>
@@ -112,13 +118,21 @@ export default function ResetPassword() {
             </div>
           ) : (
             <>
-              <div className="mb-5">
-                <h2 className="font-['Outfit'] text-xl font-bold text-[#0f2b48]">
-                  Redefinir senha
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Crie uma nova senha de no mínimo 8 caracteres para a sua conta.
-                </p>
+              <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h2 className="font-['Outfit'] text-xl font-bold text-[#0f2b48]">
+                    Redefinir senha
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Crie uma nova senha de no mínimo 8 caracteres para a sua conta.
+                  </p>
+                </div>
+                <LogoFausp
+                  variant="horizontal"
+                  theme="light"
+                  size="sm"
+                  className="hidden sm:block opacity-90 h-6"
+                />
               </div>
 
               {!token && (

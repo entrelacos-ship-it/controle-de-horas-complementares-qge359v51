@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
-import { GraduationCap, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { LogoFausp } from '@/components/LogoFausp'
 import { Button } from '@/components/ui/button'
 
 export default function ConfirmEmailChange() {
@@ -37,8 +38,8 @@ export default function ConfirmEmailChange() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-[#0f2b48] via-[#16385c] to-[#0a1e33] p-4 text-slate-100">
       <div className="w-full max-w-md">
         <div className="rounded-xl border border-white/10 bg-white p-6 shadow-2xl text-slate-900 sm:p-8 text-center space-y-4">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-lg">
-            <GraduationCap className="h-8 w-8" />
+          <div className="mx-auto">
+            <LogoFausp variant="circular" theme="light" size="lg" className="h-14 w-14 mx-auto" />
           </div>
 
           {status === 'prompt' && (

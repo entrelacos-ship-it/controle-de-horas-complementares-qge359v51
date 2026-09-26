@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { LogoFausp } from '@/components/LogoFausp'
 import { useAuth } from '@/contexts/AuthContext'
 import { useApp } from '@/contexts/AppContext'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
@@ -142,7 +143,7 @@ export default function Index() {
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Welcome Header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
         <div>
           <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-[#0f2b48] sm:text-3xl">
             Olá, {user?.name || 'Prof.ª Roberta'}
@@ -151,7 +152,13 @@ export default function Index() {
             Painel Geral de Atividades Complementares de Psicologia (200h)
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <LogoFausp
+            variant="horizontal"
+            theme="light"
+            size="sm"
+            className="hidden md:block opacity-90 h-6"
+          />
           <Badge
             variant="outline"
             className="flex items-center gap-1.5 border-blue-200 bg-blue-50/70 px-3 py-1.5 text-xs font-semibold text-blue-900"

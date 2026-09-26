@@ -28,6 +28,7 @@ import {
   Loader2,
   Calendar,
 } from 'lucide-react'
+import { LogoFausp } from '@/components/LogoFausp'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -446,23 +447,33 @@ export default function LancamentoRapido() {
          ======================================================== */}
       <section className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#0a1e33] via-[#0f2b48] to-[#12365c] p-6 text-white shadow-lg border border-[#1e3e60]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400 px-3 py-1 text-[11px] font-bold tracking-wider uppercase text-amber-950 shadow-xs">
-                <Sparkles className="h-3.5 w-3.5" />
-                Operação de Alta Produtividade
-              </span>
-              <span className="text-xs text-blue-200/90 font-medium">
-                Tempo estimado de atendimento: &lt; 15 segundos
-              </span>
+          <div className="flex items-start gap-4">
+            <div className="hidden sm:block shrink-0">
+              <LogoFausp
+                variant="circular"
+                theme="dark"
+                size="lg"
+                className="h-14 w-14 shadow-md ring-2 ring-white/15"
+              />
             </div>
-            <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              Lançamento Rápido &amp; Geração de Despacho
-            </h1>
-            <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
-              Validação instantânea de tetos regulamentares NDE, cálculo de saldos em tempo real e
-              cópia do texto oficial de deferimento para o chamado institucional.
-            </p>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400 px-3 py-1 text-[11px] font-bold tracking-wider uppercase text-amber-950 shadow-xs">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Operação de Alta Produtividade
+                </span>
+                <span className="text-xs text-blue-200/90 font-medium">
+                  Tempo estimado de atendimento: &lt; 15 segundos
+                </span>
+              </div>
+              <h1 className="font-['Outfit'] text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                Lançamento Rápido &amp; Geração de Despacho
+              </h1>
+              <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
+                Validação instantânea de tetos regulamentares NDE, cálculo de saldos em tempo real e
+                cópia do texto oficial de deferimento para o chamado institucional.
+              </p>
+            </div>
           </div>
 
           {/* Chip do Semestre Vigente */}
