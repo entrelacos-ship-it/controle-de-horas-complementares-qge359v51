@@ -201,7 +201,7 @@ export function executarTestesLocalStorageBackup(): {
 
   // CT-BK-06: Validação de estrutura incompleta / incompatível
   const validacaoInvalida = validarBackupLocal({
-    version: 0, // versão inválida
+    version: 1, // versão legada anterior (agora incompatível com a versão 2)
     savedAt: 'data_invalida',
     alunos: 'não é array',
   })

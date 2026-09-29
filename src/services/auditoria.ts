@@ -182,7 +182,11 @@ export function listarLogsAuditoriaRegistrados(): AuditoriaLog[] {
     const raw = localStorage.getItem(LOGS_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as AuditoriaLog[]
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    const filtrados = parsed.filter(
+      (l) => !l.aluno_matricula?.startsWith('PSI') && l.id !== 'ma75w7vfy7ko557',
+    )
+    return filtrados
   } catch {
     return []
   }

@@ -1,7 +1,7 @@
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '@/types'
 
-export const LOCAL_STORAGE_BACKUP_KEY = 'fausp_horas_app_backup_v1'
-export const BACKUP_CURRENT_SCHEMA_VERSION = 1
+export const LOCAL_STORAGE_BACKUP_KEY = 'fausp_horas_app_backup_v2'
+export const BACKUP_CURRENT_SCHEMA_VERSION = 2
 
 export interface LocalStorageBackupPayload {
   app: string
@@ -86,8 +86,8 @@ export function validarBackupLocal(dados: unknown): ResultadoValidacaoLocalBacku
 
   const obj = dados as Partial<LocalStorageBackupPayload>
 
-  if (typeof obj.version !== 'number' || obj.version < 1) {
-    return { valido: false, erro: 'Versão de esquema do backup inválida ou ausente.' }
+  if (typeof obj.version !== 'number' || obj.version !== BACKUP_CURRENT_SCHEMA_VERSION) {
+    return { valido: false, erro: 'Versão de esquema do backup inválida ou desatualizada.' }
   }
 
   if (!obj.savedAt || typeof obj.savedAt !== 'string') {
@@ -154,6 +154,13 @@ export function carregarBackupLocalDoStorage(storage: Storage = window.localStor
   erro?: string
 } {
   try {
+    // Limpeza proativa de chaves legadas com dados mockados (v1)
+    try {
+      storage.removeItem('fausp_horas_app_backup_v1')
+    } catch {
+      // ignore
+    }
+
     const raw = storage.getItem(LOCAL_STORAGE_BACKUP_KEY)
     if (!raw) {
       return { sucesso: false, erro: 'Nenhum backup local encontrado.' }
