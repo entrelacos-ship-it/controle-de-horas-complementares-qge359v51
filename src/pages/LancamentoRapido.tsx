@@ -475,6 +475,18 @@ export default function LancamentoRapido() {
     setDespachoGerado(null)
   }
 
+  const handleNormalizarHorasLinha = (id: string) => {
+    setLinhasCategorias((prev) =>
+      prev.map((l) => {
+        if (l.id === id) {
+          const normalizado = Math.max(0, parseFloat(String(l.horas)) || 0)
+          return { ...l, horas: normalizado }
+        }
+        return l
+      }),
+    )
+  }
+
   const handleEstornoToggle = (checked: boolean) => {
     setIsEstorno(checked)
     setDespachoGerado(null)
@@ -1264,7 +1276,7 @@ export default function LancamentoRapido() {
                             ? calcularHorasCategoria(catLinha.id, alunoLancamentos)
                             : 0
                         const tetoCat = catLinha?.teto_maximo_curso || 0
-                        const horasLinhaNum = Number(linha.horas) || 0
+                        const horasLinhaNum = Math.max(0, parseFloat(String(linha.horas)) || 0)
                         const novoTotalCat = acumuladoCat + horasLinhaNum
                         const bloqueadaPrevia = catLinha
                           ? isCategoriaBloqueada(acumuladoCat, tetoCat)
@@ -1402,6 +1414,7 @@ export default function LancamentoRapido() {
                                       onChange={(e) =>
                                         handleAtualizarLinha(linha.id, 'horas', e.target.value)
                                       }
+                                      onBlur={() => handleNormalizarHorasLinha(linha.id)}
                                       className={`h-9 text-center font-bold text-xs ${
                                         estourouTeto
                                           ? 'text-red-600 border-red-300 bg-red-50'
@@ -1452,9 +1465,10 @@ export default function LancamentoRapido() {
 
                             {bloqueadaPrevia && (
                               <p className="text-[11px] text-red-600 font-medium">
-                                ⛔ Categoria com teto de {tetoCat}h já integralmente atingido por
-                                este estudante ({acumuladoCat}h registradas). Não é possível deferir
-                                novos lançamentos normais nesta categoria.
+                                ⛔ Categoria &quot;{catLinha?.nome}&quot; com teto de {tetoCat}h já
+                                integralmente atingido por este estudante ({acumuladoCat}h
+                                registradas). Não é possível deferir novos lançamentos nesta
+                                categoria.
                               </p>
                             )}
 
@@ -1462,8 +1476,8 @@ export default function LancamentoRapido() {
                               <p className="text-[11px] text-red-600 font-medium">
                                 ⛔ As {horasLinhaNum}h solicitadas somadas ao saldo de{' '}
                                 {acumuladoCat}h totalizam {novoTotalCat}h e ultrapassam o teto de{' '}
-                                {tetoCat}h. O saldo máximo aceitável para esta categoria é de{' '}
-                                <strong>{saldoRestante}h</strong>.
+                                {tetoCat}h desta categoria. Você ainda pode lançar até{' '}
+                                <strong>{saldoRestante}h</strong> nesta categoria.
                               </p>
                             )}
                           </div>

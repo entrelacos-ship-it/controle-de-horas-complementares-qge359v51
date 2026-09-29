@@ -541,7 +541,8 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
 
   if (
     ctMulti03.valido ||
-    !ctMulti03.erroGeral?.includes('ultrapassa o teto') ||
+    !ctMulti03.erroGeral?.includes('ultrapassam o teto') ||
+    !ctMulti03.erroGeral?.includes('Você ainda pode lançar até') ||
     !ctMulti03.linhas.some((l) => l.categoriaId === mockCatEventos.id && l.estourouTeto) ||
     !ctMulti03.linhas.some((l) => l.categoriaId === mockCatCursos.id && l.valida)
   ) {
@@ -576,7 +577,11 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
     relatorioOk: true,
   })
 
-  if (ctMulti04.valido || !ctMulti04.erroGeral?.includes('já está bloqueada')) {
+  if (
+    ctMulti04.valido ||
+    !ctMulti04.erroGeral?.includes('já integralmente atingido') ||
+    !ctMulti04.erroGeral?.includes('Não é possível deferir novos lançamentos')
+  ) {
     throw new Error('CT-MULTI-04 falhou: categoria previamente bloqueada não foi rejeitada')
   }
   resultados.push('CT-MULTI-04: Rejeição de categoria previamente no teto máximo passou.')

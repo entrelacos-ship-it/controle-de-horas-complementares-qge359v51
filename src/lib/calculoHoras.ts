@@ -193,8 +193,8 @@ export function validarMultiplosLancamentos(params: {
       continue
     }
 
-    const numHoras = Number(linha.horas)
-    if (isNaN(numHoras) || numHoras <= 0) {
+    const numHoras = Math.max(0, parseFloat(String(linha.horas)) || 0)
+    if (numHoras <= 0) {
       algumErro = true
       if (!primeiroErro) {
         primeiroErro = `Informe uma quantidade de horas maior que zero para a categoria "${cat.nome}".`
@@ -231,7 +231,7 @@ export function validarMultiplosLancamentos(params: {
     if (bloqueadaPrevia) {
       algumErro = true
       if (!primeiroErro) {
-        primeiroErro = `⛔ Categoria "${cat.nome}" já está bloqueada para este estudante (teto de ${teto}h atingido).`
+        primeiroErro = `⛔ Categoria "${cat.nome}" com teto de ${teto}h já integralmente atingido por este estudante (${acumuladoAtual}h registradas). Não é possível deferir novos lançamentos nesta categoria.`
       }
       resultadosLinhas.push({
         linhaId: linha.id,
@@ -252,7 +252,7 @@ export function validarMultiplosLancamentos(params: {
     if (estourouTeto) {
       algumErro = true
       if (!primeiroErro) {
-        primeiroErro = `⛔ O lançamento de ${numHoras}h em "${cat.nome}" ultrapassa o teto máximo (${acumuladoAtual}h atuais + ${numHoras}h = ${novoTotal}h / máx ${teto}h). Saldo restante disponível: ${saldoRestante}h.`
+        primeiroErro = `⛔ As ${numHoras}h solicitadas somadas ao saldo de ${acumuladoAtual}h totalizam ${novoTotal}h e ultrapassam o teto de ${teto}h desta categoria. Você ainda pode lançar até ${saldoRestante}h nesta categoria.`
       }
       resultadosLinhas.push({
         linhaId: linha.id,
