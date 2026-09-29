@@ -36,6 +36,7 @@ export type TipoEventoAuditoria =
   | 'IMPORTACAO_LEGADA'
   | 'VIRADA_SEMESTRE'
   | 'CONFIGURACAO_ALTERADA'
+  | 'ALUNO_EXCLUIDO'
 
 export interface AuditoriaLog {
   id: string

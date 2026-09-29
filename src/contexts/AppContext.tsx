@@ -16,6 +16,7 @@ import {
   listarAlunos,
   criarAluno as apiCriarAluno,
   atualizarAluno as apiAtualizarAluno,
+  excluirAluno as apiExcluirAluno,
   promoverTodosAlunos as apiPromoverTodosAlunos,
   executarViradaSemestreAssistida as apiExecutarViradaSemestreAssistida,
   ViradaSemestreParams,
@@ -59,6 +60,7 @@ export interface AppContextType {
     id: string,
     data: Partial<Omit<Aluno, 'id' | 'created' | 'updated'>>,
   ) => Promise<Aluno>
+  excluirAluno: (id: string, autor?: { nome?: string; email?: string }) => Promise<boolean>
   promoverTodosAlunos: () => Promise<number>
   executarViradaSemestreAssistida: (
     params: ViradaSemestreParams,
@@ -275,6 +277,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [persistirNoLocalStorage],
   )
 
+  const excluirAluno = useCallback(
+    async (id: string, autor?: { nome?: string; email?: string }): Promise<boolean> => {
+      // 1. Coleta dados para auditoria antes da exclusão
+      const alunoAlvo = stateRef.current.alunos.find((a) => a.id === id)
+      const lancsAlvo = stateRef.current.lancamentos.filter((l) => l.aluno_id === id)
+      const horasTotais = lancsAlvo.reduce((sum, l) => sum + (Number(l.horas_aceitas) || 0), 0)
+      const totalLancamentos = lancsAlvo.length
+
+      // 2. Chama a API de exclusão (que cascateia os lançamentos)
+      const ok = await apiExcluirAluno(id)
+      if (ok) {
+        // Atualiza estado de alunos
+        const novosAlunos = stateRef.current.alunos.filter((a) => a.id !== id)
+        // Atualiza estado de lançamentos removendo os do aluno excluído
+        const novosLancamentos = stateRef.current.lancamentos.filter((l) => l.aluno_id !== id)
+
+        setAlunos(novosAlunos)
+        setLancamentos(novosLancamentos)
+
+        // Salva backup local imediatamente sem o aluno e sem os lançamentos órfãos
+        persistirNoLocalStorage({
+          alunos: novosAlunos,
+          lancamentos: novosLancamentos,
+        })
+
+        // Registra log na trilha de auditoria
+        try {
+          const { registrarLogAuditoria } = await import('@/services/auditoria')
+          const nomeAtor = autor?.nome || 'Coordenação de Psicologia'
+          const emailAtor = autor?.email || ''
+          const nomeAluno = alunoAlvo?.nome || 'Estudante'
+          const matAluno = alunoAlvo?.matricula || '—'
+
+          registrarLogAuditoria({
+            tipo_evento: 'ALUNO_EXCLUIDO',
+            ator_nome: nomeAtor,
+            ator_email: emailAtor,
+            aluno_nome: nomeAluno,
+            aluno_matricula: matAluno,
+            semestre_letivo: stateRef.current.config?.semestre_letivo_atual || '',
+            descricao: `Exclusão do estudante ${nomeAluno} (${matAluno}). Total de ${horasTotais}h acumuladas e ${totalLancamentos} lançamento(s) vinculados removidos em cascata.`,
+            detalhes: {
+              aluno_id: id,
+              nome: nomeAluno,
+              matricula: matAluno,
+              turno: alunoAlvo?.turno,
+              semestre_atual: alunoAlvo?.semestre_atual,
+              horas_acumuladas: horasTotais,
+              lancamentos_removidos: totalLancamentos,
+            },
+          })
+        } catch (e) {
+          console.warn('Erro ao registrar log de exclusão de aluno na auditoria:', e)
+        }
+      }
+      return ok
+    },
+    [persistirNoLocalStorage],
+  )
+
   const promoverTodosAlunos = useCallback(async (): Promise<number> => {
     const count = await apiPromoverTodosAlunos()
     // Recarrega alunos para garantir sincronia completa
@@ -434,6 +496,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         forcarBackupLocal,
         criarAluno,
         atualizarAluno,
+        excluirAluno,
         promoverTodosAlunos,
         executarViradaSemestreAssistida,
         criarCategoria,

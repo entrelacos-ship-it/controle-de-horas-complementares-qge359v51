@@ -32,6 +32,27 @@ export async function atualizarAluno(
 }
 
 /**
+ * Exclui um aluno e remove em cascata seus lançamentos vinculados se houver.
+ */
+export async function excluirAluno(id: string): Promise<boolean> {
+  // 1. Buscar todos os lançamentos vinculados a este aluno
+  try {
+    const lancamentosVinculados = await pb.collection('lancamentos').getFullList({
+      filter: `aluno_id = "${id}"`,
+    })
+    // 2. Remover em lote os lançamentos vinculados
+    if (lancamentosVinculados.length > 0) {
+      await Promise.all(lancamentosVinculados.map((l) => pb.collection('lancamentos').delete(l.id)))
+    }
+  } catch (err) {
+    console.warn('Aviso ao remover lançamentos vinculados antes da exclusão do aluno:', err)
+  }
+
+  // 3. Excluir o registro do aluno
+  return await pb.collection('alunos').delete(id)
+}
+
+/**
  * Promove todos os alunos para o próximo semestre (10º permanece 10º)
  */
 export async function promoverTodosAlunos(): Promise<number> {

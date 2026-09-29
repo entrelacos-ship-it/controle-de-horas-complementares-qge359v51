@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listarAlunos, ResultadoViradaSemestre } from '@/services/alunos'
 import { useApp } from '@/contexts/AppContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { listarTodosLancamentos } from '@/services/lancamentos'
 import { listarCategorias } from '@/services/categorias'
 import { getConfiguracaoGlobal } from '@/services/configuracao'
@@ -26,6 +27,8 @@ import {
   Calendar,
   AlertCircle,
   FileText,
+  Trash2,
+  ShieldAlert,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -67,6 +70,7 @@ export default function AlunosList() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const appContext = useApp()
+  const { user } = useAuth()
 
   const [alunos, setAlunos] = useState<Aluno[]>(appContext.alunos)
   const [lancamentos, setLancamentos] = useState<Lancamento[]>(appContext.lancamentos)
@@ -104,6 +108,14 @@ export default function AlunosList() {
   const [alunoEmail, setAlunoEmail] = useState('')
   const [salvandoAluno, setSalvandoAluno] = useState(false)
   const [erroModal, setErroModal] = useState<string | null>(null)
+
+  // Modal de Exclusão de Aluno (com confirmação reforçada)
+  const [alunoParaExcluir, setAlunoParaExcluir] = useState<Aluno | null>(null)
+  const [isExcluirModalOpen, setIsExcluirModalOpen] = useState(false)
+  const [confirmacaoMatriculaInput, setConfirmacaoMatriculaInput] = useState('')
+  const [cienciaCascataChecked, setCienciaCascataChecked] = useState(false)
+  const [excluindoAluno, setExcluindoAluno] = useState(false)
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null)
 
   // Modal "Promover Semestres" (Ferramenta de transição letiva com resumo de impacto)
   const [isPromoverModalOpen, setIsPromoverModalOpen] = useState(false)
@@ -223,6 +235,87 @@ export default function AlunosList() {
     setAlunoEmail(a.email)
     setErroModal(null)
     setIsAlunoModalOpen(true)
+  }
+
+  // Abertura do modal de exclusão
+  const handleAbrirExcluirAluno = (e: React.MouseEvent, a: Aluno) => {
+    e.stopPropagation() // Não navegar para o prontuário
+    setAlunoParaExcluir(a)
+    setConfirmacaoMatriculaInput('')
+    setCienciaCascataChecked(false)
+    setErroExclusao(null)
+    setIsExcluirModalOpen(true)
+  }
+
+  // Abertura do modal de exclusão a partir do formulário de edição
+  const handleExcluirDoFormularioEdicao = () => {
+    if (!editingAlunoId) return
+    const a = alunos.find((x) => x.id === editingAlunoId)
+    if (!a) return
+    setIsAlunoModalOpen(false)
+    setAlunoParaExcluir(a)
+    setConfirmacaoMatriculaInput('')
+    setCienciaCascataChecked(false)
+    setErroExclusao(null)
+    setIsExcluirModalOpen(true)
+  }
+
+  // Executar exclusão confirmada
+  const handleConfirmarExclusaoAluno = async () => {
+    if (!alunoParaExcluir) return
+    setErroExclusao(null)
+
+    const metricas = getAlunoMetricas(alunoParaExcluir.id)
+    const temLancamentos =
+      metricas.totalHoras > 0 || lancamentos.some((l) => l.aluno_id === alunoParaExcluir.id)
+
+    // Validação de confirmação reforçada se tiver lançamentos
+    if (temLancamentos) {
+      const matriculaEsperada = alunoParaExcluir.matricula.trim().toUpperCase()
+      const matriculaDigitada = confirmacaoMatriculaInput.trim().toUpperCase()
+      if (matriculaDigitada !== matriculaEsperada) {
+        setErroExclusao(
+          `Para confirmar a exclusão com histórico, digite exatamente a matrícula "${matriculaEsperada}".`,
+        )
+        return
+      }
+      if (!cienciaCascataChecked) {
+        setErroExclusao(
+          'Marque a caixa de ciência sobre a remoção em cascata dos lançamentos vinculados.',
+        )
+        return
+      }
+    }
+
+    try {
+      setExcluindoAluno(true)
+      const ator = {
+        nome: user?.name || user?.email || 'Coordenação de Psicologia',
+        email: user?.email || '',
+      }
+
+      await appContext.excluirAluno(alunoParaExcluir.id, ator)
+
+      toast({
+        title: 'Estudante excluído com sucesso!',
+        description: `O cadastro de ${alunoParaExcluir.nome} (${alunoParaExcluir.matricula}) e seus registros foram removidos.`,
+      })
+
+      setIsExcluirModalOpen(false)
+      setAlunoParaExcluir(null)
+      await carregarDados()
+    } catch (err: unknown) {
+      console.error(err)
+      const msg = err instanceof Error ? err.message : 'Falha ao excluir o estudante no servidor.'
+      setErroExclusao(msg)
+      toast({
+        title: 'Erro ao excluir aluno',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setExcluindoAluno(false)
+    }
   }
 
   // Salvar Aluno (Criar ou Editar com validações estritas)
@@ -638,6 +731,16 @@ export default function AlunosList() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={(e) => handleAbrirExcluirAluno(e, aluno)}
+                            className="h-7 px-2 text-xs text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                            title="Excluir Estudante"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1 text-rose-600" />
+                            Excluir
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             className="h-7 text-xs text-[#1d4ed8] hover:bg-blue-100"
                           >
                             Ficha
@@ -775,28 +878,242 @@ export default function AlunosList() {
               </p>
             </div>
 
-            <DialogFooter className="pt-3 border-t border-slate-100">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsAlunoModalOpen(false)}
-                className="text-xs"
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                disabled={salvandoAluno}
-                className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold"
-              >
-                {salvandoAluno
-                  ? 'Salvando...'
-                  : editingAlunoId
-                    ? 'Salvar Alterações'
-                    : 'Cadastrar Aluno'}
-              </Button>
+            <DialogFooter className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              {editingAlunoId ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleExcluirDoFormularioEdicao}
+                  className="text-xs text-rose-700 hover:bg-rose-50 self-start"
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Excluir Estudante...
+                </Button>
+              ) : (
+                <div />
+              )}
+              <div className="flex items-center gap-2 self-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAlunoModalOpen(false)}
+                  className="text-xs"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={salvandoAluno}
+                  className="bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-semibold"
+                >
+                  {salvandoAluno
+                    ? 'Salvando...'
+                    : editingAlunoId
+                      ? 'Salvar Alterações'
+                      : 'Cadastrar Aluno'}
+                </Button>
+              </div>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL DE EXCLUSÃO DE ALUNO COM IMPACTO E CONFIRMAÇÃO REFORÇADA */}
+      <Dialog
+        open={isExcluirModalOpen}
+        onOpenChange={(open) => {
+          if (!open && excluindoAluno) return
+          setIsExcluirModalOpen(open)
+          if (!open) setAlunoParaExcluir(null)
+        }}
+      >
+        <DialogContent className="bg-white max-w-lg">
+          <DialogHeader className="border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="font-['Outfit'] text-lg font-bold text-[#0f2b48]">
+                  Excluir Cadastro de Estudante
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Operação destrutiva com remoção em cascata e registro na trilha de auditoria.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {alunoParaExcluir &&
+            (() => {
+              const lancsDoAluno = lancamentos.filter((l) => l.aluno_id === alunoParaExcluir.id)
+              const totalHoras = lancsDoAluno.reduce(
+                (sum, l) => sum + (Number(l.horas_aceitas) || 0),
+                0,
+              )
+              const totalLancamentos = lancsDoAluno.length
+              const temHistorico = totalLancamentos > 0 || totalHoras > 0
+              const matriculaEsperada = alunoParaExcluir.matricula.trim().toUpperCase()
+              const matriculaBate =
+                confirmacaoMatriculaInput.trim().toUpperCase() === matriculaEsperada
+              const podeConfirmar = !temHistorico || (matriculaBate && cienciaCascataChecked)
+
+              return (
+                <div className="space-y-4 py-2 text-xs">
+                  {/* Resumo do Aluno e Impacto */}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3.5 space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <div>
+                        <div className="font-bold text-sm text-slate-900">
+                          {alunoParaExcluir.nome}
+                        </div>
+                        <div className="text-[11px] text-slate-500">{alunoParaExcluir.email}</div>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-xs font-bold text-[#0f2b48] bg-white"
+                      >
+                        {alunoParaExcluir.matricula}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Turno:</span>
+                        <strong className="text-slate-800">{alunoParaExcluir.turno}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Semestre Atual:</span>
+                        <strong className="text-slate-800">
+                          {alunoParaExcluir.semestre_atual}º Semestre
+                        </strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Lançamentos Vinculados:</span>
+                        <strong
+                          className={
+                            totalLancamentos > 0 ? 'text-rose-700 font-bold' : 'text-slate-800'
+                          }
+                        >
+                          {totalLancamentos} registro(s)
+                        </strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Horas Acumuladas:</span>
+                        <strong
+                          className={totalHoras > 0 ? 'text-rose-700 font-bold' : 'text-slate-800'}
+                        >
+                          {totalHoras}h
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Alerta de Impacto em Cascata */}
+                  {temHistorico ? (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50/90 p-3.5 space-y-2 text-amber-950">
+                      <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900">
+                        <ShieldAlert className="h-4 w-4 text-amber-700 shrink-0" />
+                        Aviso Explícito: Histórico de Atividades Presente
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-amber-900">
+                        Este estudante possui <strong>{totalLancamentos} lançamento(s)</strong>{' '}
+                        totalizando <strong>{totalHoras} horas complementares</strong> deferidas.
+                        Para manter a integridade dos dados e não deixar registros órfãos no
+                        sistema, a exclusão removerá em cascata todos os lançamentos vinculados a
+                        este aluno. Os demais estudantes não serão afetados.
+                      </p>
+                      <p className="text-[11px] text-amber-800 font-medium">
+                        O evento será registrado com assinatura na{' '}
+                        <strong>Trilha de Auditoria NDE</strong> e o backup local será invalidado
+                        imediatamente.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-blue-900 text-xs">
+                      Este estudante não possui lançamentos de horas registrados. O cadastro será
+                      removido com segurança.
+                    </div>
+                  )}
+
+                  {/* Confirmação Reforçada quando há histórico */}
+                  {temHistorico && (
+                    <div className="space-y-3 rounded-lg border border-rose-200 bg-rose-50/50 p-3.5">
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="input-confirma-mat"
+                          className="text-xs font-semibold text-rose-950 block"
+                        >
+                          Confirmação Reforçada: Digite a matrícula do estudante (
+                          <code className="font-mono">{matriculaEsperada}</code>) *
+                        </Label>
+                        <Input
+                          id="input-confirma-mat"
+                          value={confirmacaoMatriculaInput}
+                          onChange={(e) => setConfirmacaoMatriculaInput(e.target.value)}
+                          placeholder={`Digite ${matriculaEsperada} para liberar`}
+                          className="font-mono text-xs uppercase bg-white border-rose-300 focus:border-rose-600"
+                          autoComplete="off"
+                        />
+                      </div>
+
+                      <div className="flex items-start gap-2 pt-1">
+                        <Checkbox
+                          id="check-ciencia-cascata"
+                          checked={cienciaCascataChecked}
+                          onCheckedChange={(checked) => setCienciaCascataChecked(Boolean(checked))}
+                          className="mt-0.5 accent-rose-600"
+                        />
+                        <Label
+                          htmlFor="check-ciencia-cascata"
+                          className="text-[11px] text-rose-950 leading-tight font-medium cursor-pointer"
+                        >
+                          Estou ciente de que a exclusão é definitiva e removerá permanentemente o
+                          aluno e seus {totalLancamentos} lançamento(s) vinculados ({totalHoras}h).
+                        </Label>
+                      </div>
+                    </div>
+                  )}
+
+                  {erroExclusao && (
+                    <div className="rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+                      <span>{erroExclusao}</span>
+                    </div>
+                  )}
+
+                  <DialogFooter className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={excluindoAluno}
+                      onClick={() => setIsExcluirModalOpen(false)}
+                      className="text-xs"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={!podeConfirmar || excluindoAluno}
+                      onClick={handleConfirmarExclusaoAluno}
+                      className="bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold px-4 shadow-sm"
+                    >
+                      {excluindoAluno ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Excluindo...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Confirmar e Excluir Definitivamente
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </div>
+              )
+            })()}
         </DialogContent>
       </Dialog>
 

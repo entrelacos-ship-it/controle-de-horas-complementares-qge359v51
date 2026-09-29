@@ -334,6 +334,13 @@ export default function Auditoria() {
             Regulamento NDE
           </Badge>
         )
+      case 'ALUNO_EXCLUIDO':
+        return (
+          <Badge className="bg-rose-700 hover:bg-rose-800 text-white text-[10px] py-0 px-2 font-medium">
+            <AlertTriangle className="mr-1 h-3 w-3" />
+            Aluno Excluído
+          </Badge>
+        )
       case 'LANCAMENTO_CRIADO':
       default:
         return (
@@ -759,6 +766,9 @@ export default function Auditoria() {
                       </SelectItem>
                       <SelectItem value="VIRADA_SEMESTRE" className="text-xs">
                         Virada de Semestre
+                      </SelectItem>
+                      <SelectItem value="ALUNO_EXCLUIDO" className="text-xs">
+                        Exclusão de Estudante
                       </SelectItem>
                     </SelectContent>
                   </Select>
