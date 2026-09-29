@@ -2,6 +2,30 @@ import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '../types'
 import { calcularHorasCategoria, isCategoriaBloqueada } from './calculoHoras'
 
 /**
+ * Mapeia semestre letivo da atividade (ex: "2026.2" ou "2026-2") para o semestre ordinal do curso (1º a 10º)
+ * com base no período de entrada do aluno (ex: "2025.1").
+ */
+export function calcularSemestreCurso(
+  semestreAtividade: string,
+  periodoEntrada?: string,
+  semestreAtualAluno: number = 1,
+): number {
+  if (!semestreAtividade) return 1
+  const parseSemestre = (s: string): { ano: number; sem: number } | null => {
+    const m = s.match(/^(\d{4})[./-](\d)$/)
+    if (!m) return null
+    return { ano: parseInt(m[1], 10), sem: parseInt(m[2], 10) }
+  }
+  const ativ = parseSemestre(semestreAtividade)
+  const entrada = periodoEntrada ? parseSemestre(periodoEntrada) : null
+  if (ativ && entrada) {
+    const ordinal = (ativ.ano - entrada.ano) * 2 + (ativ.sem - entrada.sem) + 1
+    return Math.min(10, Math.max(1, ordinal))
+  }
+  return Math.min(10, Math.max(1, semestreAtualAluno))
+}
+
+/**
  * Formata data no padrão brasileiro dd/mm/aaaa
  */
 export function formatarDataBr(dataStr?: string | Date): string {
@@ -162,26 +186,40 @@ export function gerarTextoDespacho(params: GerarDespachoParams): string {
     }
   }
 
-  // 3. Totais gerais e semestrais
+  // 3. Totais gerais e apuração cronológica semestral com carry-over
   for (const l of lancamentosDoAluno) {
     const h = Number(l.horas_aceitas) || 0
     totalGeral += h
-    if (l.semestre_letivo_atividade === semestreAtualLetivo) {
-      horasSemestreAtual += h
-    }
   }
 
-  const semestreAluno = Math.min(10, Math.max(1, aluno.semestre_atual || 1))
-  const restanteSemestreAtual = Math.max(0, minimoSemestre - horasSemestreAtual)
+  const minimoSemestreNum = Number(config.minimo_exigido_semestre) || 20
 
-  // Linhas por semestre (do semestre atual do aluno até o 10º)
-  linhas.push(
-    `Restante para integralizar o semestre (${semestreAluno}º): ${restanteSemestreAtual} horas`,
-  )
+  // Agrupar horas por semestre do curso (1º a 10º), estornos negativos incluídos
+  const horasPorSemestreCurso: Record<number, number> = {}
+  for (let s = 1; s <= 10; s++) horasPorSemestreCurso[s] = 0
+  for (const l of lancamentosDoAluno) {
+    const h = Number(l.horas_aceitas) || 0
+    const semCurso = calcularSemestreCurso(
+      l.semestre_letivo_atividade,
+      aluno.periodo_entrada,
+      aluno.semestre_atual || 1,
+    )
+    horasPorSemestreCurso[semCurso] = (horasPorSemestreCurso[semCurso] || 0) + h
+  }
 
-  // REGRA DO NUMERAL 0: semestres futuros (semestreAluno + 1 até 10)
-  for (let sem = semestreAluno + 1; sem <= 10; sem++) {
-    linhas.push(`Restante para integralizar o semestre (${sem}º): 0 horas`)
+  // Apuração cronológica com abatimento de sobras (carry-over)
+  let sobraAcumulada = 0
+  for (let sem = 1; sem <= 10; sem++) {
+    const horasComSobra = (horasPorSemestreCurso[sem] || 0) + sobraAcumulada
+    if (horasComSobra >= minimoSemestreNum) {
+      linhas.push(`Restante para integralizar o semestre (${sem}º): 0 horas`)
+      sobraAcumulada = horasComSobra - minimoSemestreNum
+    } else {
+      linhas.push(
+        `Restante para integralizar o semestre (${sem}º): ${minimoSemestreNum - Math.max(0, horasComSobra)} horas`,
+      )
+      sobraAcumulada = 0
+    }
   }
 
   // Restante para o curso

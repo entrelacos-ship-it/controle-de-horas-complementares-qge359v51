@@ -5,7 +5,7 @@ import {
   validarMultiplosLancamentos,
   calcularProgressoAluno,
 } from './calculoHoras'
-import { gerarTextoDespacho, formatarMesAno } from './formatadorDespacho'
+import { gerarTextoDespacho, formatarMesAno, calcularSemestreCurso } from './formatadorDespacho'
 import { executarTestesImportacao } from './importacaoPlanilha.test'
 import { executarTestesAuth } from './authValidations.test'
 import { executarTestesLocalStorageBackup } from './localStorageBackup.test'
@@ -99,44 +99,140 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
     throw new Error('CT-03 falhou')
   }
 
-  // CT-04: Regra do numeral 0 no despacho
-  const lancamentos: Lancamento[] = [
+  // CT-04: Integralização semestral correta e apuração cronológica com carry-over
+  // CT-04.1: Aluno no 1º semestre com 20h lançadas no 1º semestre
+  // -> (1º): 0 horas, (2º) a (10º): 20 horas
+  const mockAluno1Semestre: Aluno = {
+    id: 'aluno_1sem',
+    matricula: 'PSI101',
+    nome: 'Estudante Primeiro Semestre',
+    turno: 'Matutino',
+    semestre_atual: 1,
+    periodo_entrada: '2026.1',
+    email: 'calouro@aluno.fausp.br',
+  }
+
+  const lancamentos20h: Lancamento[] = [
     {
-      id: 'l1',
-      aluno_id: mockAluno3Semestre.id,
+      id: 'l_20h',
+      aluno_id: mockAluno1Semestre.id,
       categoria_id: mockCatEventos.id,
-      data_lancamento: '2026-08-10',
-      semestre_letivo_atividade: '2026.2',
+      data_lancamento: '2026-03-10',
+      semestre_letivo_atividade: '2026.1',
       horas_aceitas: 20,
       comprovante_ok: true,
       relatorio_ok: true,
-      created: '2026-08-10',
-      updated: '2026-08-10',
+      created: '2026-03-10',
+      updated: '2026-03-10',
     },
   ]
 
-  const despacho = gerarTextoDespacho({
-    aluno: mockAluno3Semestre,
+  const despacho20h = gerarTextoDespacho({
+    aluno: mockAluno1Semestre,
     categoriaAtividade: mockCatEventos,
     horasLancamento: 20,
-    semestreAtividade: '2026.2',
-    lancamentosDoAluno: lancamentos,
+    semestreAtividade: '2026.1',
+    lancamentosDoAluno: lancamentos20h,
     categorias: [mockCatEventos, mockCatCursos],
     config: mockConfig,
   })
 
-  let ct04Ok = true
-  for (let s = 4; s <= 10; s++) {
-    if (!despacho.includes(`Restante para integralizar o semestre (${s}º): 0 horas`)) {
-      ct04Ok = false
-      break
+  if (!despacho20h.includes('Restante para integralizar o semestre (1º): 0 horas')) {
+    throw new Error('CT-04.1 falhou: 1º semestre com 20h deveria ter 0 horas restantes')
+  }
+  for (let s = 2; s <= 10; s++) {
+    if (!despacho20h.includes(`Restante para integralizar o semestre (${s}º): 20 horas`)) {
+      throw new Error(`CT-04.1 falhou: ${s}º semestre deveria ter 20 horas restantes`)
     }
   }
-  if (ct04Ok) {
-    resultados.push('CT-04: Regra do numeral 0 (4º ao 10º semestre com 0 horas) passou.')
-  } else {
-    throw new Error('CT-04 falhou')
+  resultados.push(
+    'CT-04.1: Aluno com 20h no 1º semestre -> (1º): 0 horas, (2º) a (10º): 20 horas passou.',
+  )
+
+  // CT-04.2: Aluno com 30h lançadas no 1º semestre (carry-over de 10h para o 2º)
+  // -> (1º): 0 horas, (2º): 10 horas, (3º) a (10º): 20 horas
+  const lancamentos30h: Lancamento[] = [
+    {
+      id: 'l_30h',
+      aluno_id: mockAluno1Semestre.id,
+      categoria_id: mockCatEventos.id,
+      data_lancamento: '2026-03-10',
+      semestre_letivo_atividade: '2026.1',
+      horas_aceitas: 30,
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2026-03-10',
+      updated: '2026-03-10',
+    },
+  ]
+
+  const despacho30h = gerarTextoDespacho({
+    aluno: mockAluno1Semestre,
+    categoriaAtividade: mockCatEventos,
+    horasLancamento: 30,
+    semestreAtividade: '2026.1',
+    lancamentosDoAluno: lancamentos30h,
+    categorias: [mockCatEventos, mockCatCursos],
+    config: mockConfig,
+  })
+
+  if (!despacho30h.includes('Restante para integralizar o semestre (1º): 0 horas')) {
+    throw new Error('CT-04.2 falhou: 1º semestre deveria ter 0 horas restantes')
   }
+  if (!despacho30h.includes('Restante para integralizar o semestre (2º): 10 horas')) {
+    throw new Error(
+      'CT-04.2 falhou: 2º semestre deveria ter 10 horas restantes (sobra de 10h abatida)',
+    )
+  }
+  for (let s = 3; s <= 10; s++) {
+    if (!despacho30h.includes(`Restante para integralizar o semestre (${s}º): 20 horas`)) {
+      throw new Error(`CT-04.2 falhou: ${s}º semestre deveria ter 20 horas restantes`)
+    }
+  }
+  resultados.push(
+    'CT-04.2: Aluno com 30h no 1º semestre -> (1º): 0h, (2º): 10h, (3º) a (10º): 20h (carry-over) passou.',
+  )
+
+  // CT-04.3: Aluno sem lançamentos -> todos os 10 semestres com 20 horas
+  const despachoSemLancamentos = gerarTextoDespacho({
+    aluno: mockAluno1Semestre,
+    semestreAtividade: '2026.1',
+    lancamentosDoAluno: [],
+    categorias: [mockCatEventos, mockCatCursos],
+    config: mockConfig,
+  })
+
+  for (let s = 1; s <= 10; s++) {
+    if (
+      !despachoSemLancamentos.includes(`Restante para integralizar o semestre (${s}º): 20 horas`)
+    ) {
+      throw new Error(
+        `CT-04.3 falhou: aluno sem lançamentos no ${s}º semestre deveria ter 20 horas restantes`,
+      )
+    }
+  }
+  resultados.push(
+    'CT-04.3: Aluno sem lançamentos -> todos os 10 semestres com 20 horas restantes passou.',
+  )
+
+  // CT-04.4: Validação do helper calcularSemestreCurso
+  if (
+    calcularSemestreCurso('2025.1', '2025.1', 1) !== 1 ||
+    calcularSemestreCurso('2025.2', '2025.1', 1) !== 2 ||
+    calcularSemestreCurso('2026.1', '2025.1', 1) !== 3 ||
+    calcularSemestreCurso('2026.2', '2025.1', 1) !== 4 ||
+    calcularSemestreCurso('2029.2', '2025.1', 1) !== 10 ||
+    calcularSemestreCurso('2035.1', '2025.1', 1) !== 10 ||
+    calcularSemestreCurso('', '2025.1', 3) !== 1 ||
+    calcularSemestreCurso('invalido', '2025.1', 5) !== 5
+  ) {
+    throw new Error('CT-04.4 falhou: calcularSemestreCurso não mapeou semestres corretamente')
+  }
+  resultados.push(
+    'CT-04.4: Helper calcularSemestreCurso (mapeamento ordinal de 1 a 10 e fallbacks) passou.',
+  )
+
+  const lancamentos: Lancamento[] = lancamentos20h
 
   // CT-05: Estorno negativo
   const ct05SemObs = validarNovoLancamento({
@@ -566,11 +662,23 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
     )
   }
 
-  // 3. Regra do numeral 0 (do 4º ao 10º semestre)
-  for (let s = 4; s <= 10; s++) {
-    if (!despachoMulti.includes(`Restante para integralizar o semestre (${s}º): 0 horas`)) {
-      throw new Error(`CT-MULTI-06.3 falhou: Regra do numeral 0 violada no semestre ${s}`)
-    }
+  // 3. Apuração semestral com carry-over:
+  // Aluno ingressou em 2025.1. No semestre 2026.2 ele está no 4º semestre do curso.
+  // Horas no 4º semestre = 60h. Mínimo = 20h.
+  // 1º, 2º e 3º semestres = 20h restantes cada (sem lançamentos anteriores).
+  // 4º semestre = 0 horas restantes (sobra de 40h).
+  // 5º semestre = 0 horas restantes (sobra de 20h).
+  // 6º semestre = 0 horas restantes (sobra esgotada).
+  // 7º a 10º semestres = 20 horas restantes cada.
+  if (
+    !despachoMulti.includes('Restante para integralizar o semestre (4º): 0 horas') ||
+    !despachoMulti.includes('Restante para integralizar o semestre (5º): 0 horas') ||
+    !despachoMulti.includes('Restante para integralizar o semestre (6º): 0 horas') ||
+    !despachoMulti.includes('Restante para integralizar o semestre (7º): 20 horas')
+  ) {
+    throw new Error(
+      `CT-MULTI-06.3 falhou: Apuração semestral ou carry-over com resultado inesperado:\n${despachoMulti}`,
+    )
   }
 
   // 4. Totais recalculados: total geral 60 horas, restante para 200h é 140h
