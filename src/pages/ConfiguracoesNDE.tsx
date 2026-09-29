@@ -1104,8 +1104,8 @@ export default function ConfiguracoesNDE() {
           <CardContent className="space-y-4">
             <p className="text-xs text-slate-600 leading-relaxed">
               Restaura a base de demonstração padrão do curso de Psicologia FAUSP (Mariana, Lucas,
-              Beatriz, Felipe e Camila), as 5 categorias do regulamento e os lançamentos com
-              estornos didáticos para testes e homologação.
+              Beatriz, Felipe e Camila), as 13 categorias oficiais NDE e os lançamentos com estornos
+              didáticos para testes e homologação.
             </p>
 
             <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 flex items-start gap-2">
