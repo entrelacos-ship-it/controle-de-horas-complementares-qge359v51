@@ -9,7 +9,7 @@ import {
   calcularHorasCategoria,
   isCategoriaBloqueada,
 } from '@/lib/calculoHoras'
-import { gerarTextoDespacho, formatarDataBr } from '@/lib/formatadorDespacho'
+import { gerarTextoDespacho, formatarMesAno } from '@/lib/formatadorDespacho'
 import { gerarRelatorioAlunoPdf } from '@/lib/exportacaoRelatorioAlunoPdf'
 import { LogoFausp } from '@/components/LogoFausp'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal, AlunoProgresso } from '@/types'
@@ -420,7 +420,7 @@ export default function AlunoIndividual() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-600">
                 <tr>
-                  <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Mês/Ano</th>
                   <th className="px-4 py-3">Semestre</th>
                   <th className="px-4 py-3">Categoria</th>
                   <th className="px-4 py-3">Horas</th>
@@ -447,8 +447,8 @@ export default function AlunoIndividual() {
 
                     return (
                       <tr key={l.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
-                          {formatarDataBr(l.data_lancamento)}
+                        <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap font-mono font-medium">
+                          {formatarMesAno(l.data_lancamento)}
                         </td>
                         <td className="px-4 py-3 text-xs font-medium text-slate-800">
                           {l.semestre_letivo_atividade}

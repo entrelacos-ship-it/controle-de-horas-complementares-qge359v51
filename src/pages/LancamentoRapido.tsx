@@ -74,10 +74,18 @@ export default function LancamentoRapido() {
   const [alunoLancamentos, setAlunoLancamentos] = useState<Lancamento[]>([])
   const searchContainerRef = useRef<HTMLDivElement>(null)
 
-  // Passo 2: Registro da Atividade
-  const [dataAtividade, setDataAtividade] = useState(() => {
-    return new Date().toISOString().split('T')[0]
+  // Passo 2: Registro da Atividade (apenas Mês e Ano)
+  const [mesAtividade, setMesAtividade] = useState(() => {
+    const hoje = new Date()
+    return String(hoje.getMonth() + 1).padStart(2, '0')
   })
+  const [anoAtividade, setAnoAtividade] = useState(() => {
+    const hoje = new Date()
+    return String(hoje.getFullYear())
+  })
+  const dataAtividade = useMemo(() => {
+    return `${anoAtividade}-${mesAtividade}-01`
+  }, [anoAtividade, mesAtividade])
   const [semestreAtividade, setSemestreAtividade] = useState('2026.2')
   const [categoriaId, setCategoriaId] = useState('')
   const [horasAceitas, setHorasAceitas] = useState<number | string>(10)
@@ -491,6 +499,23 @@ export default function LancamentoRapido() {
 
     if (!config) {
       setValidationError('Configuração global do sistema não carregada.')
+      return
+    }
+
+    // Validação de mês/ano da atividade: não permitir competência futura
+    const hoje = new Date()
+    const anoAtualNum = hoje.getFullYear()
+    const mesAtualNum = hoje.getMonth() + 1
+    const anoSelecionadoNum = parseInt(anoAtividade, 10)
+    const mesSelecionadoNum = parseInt(mesAtividade, 10)
+
+    if (
+      anoSelecionadoNum > anoAtualNum ||
+      (anoSelecionadoNum === anoAtualNum && mesSelecionadoNum > mesAtualNum)
+    ) {
+      setValidationError(
+        `O mês e ano de realização (${mesAtividade}/${anoAtividade}) não pode ser uma data futura. Selecione até o mês vigente (${String(mesAtualNum).padStart(2, '0')}/${anoAtualNum}).`,
+      )
       return
     }
 
@@ -992,28 +1017,65 @@ export default function LancamentoRapido() {
               )}
 
               <form onSubmit={handleSalvarLancamento} className="space-y-4">
-                {/* Linha 1: Data da Atividade + Semestre Letivo */}
+                {/* Linha 1: Data da Realização da Atividade (Mês e Ano) + Semestre Letivo */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="data-atividade"
-                      className="text-xs font-semibold text-slate-700"
-                    >
-                      Data da Atividade:
+                    <Label className="text-xs font-semibold text-slate-700">
+                      Mês / Ano da Realização:
                     </Label>
-                    <div className="relative">
-                      <Input
-                        id="data-atividade"
-                        type="date"
-                        required
-                        value={dataAtividade}
-                        onChange={(e) => {
-                          setDataAtividade(e.target.value)
-                          setDespachoGerado(null)
-                        }}
-                        className="h-10 text-sm border-slate-300 focus-visible:ring-[#1d4ed8]"
-                      />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <select
+                          id="mes-atividade"
+                          aria-label="Mês da Realização"
+                          value={mesAtividade}
+                          onChange={(e) => {
+                            setMesAtividade(e.target.value)
+                            setDespachoGerado(null)
+                          }}
+                          className="h-10 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-7 text-sm shadow-2xs focus:border-[#1d4ed8] focus:outline-none focus:ring-1 focus:ring-[#1d4ed8]"
+                        >
+                          <option value="01">01 - Janeiro</option>
+                          <option value="02">02 - Fevereiro</option>
+                          <option value="03">03 - Março</option>
+                          <option value="04">04 - Abril</option>
+                          <option value="05">05 - Maio</option>
+                          <option value="06">06 - Junho</option>
+                          <option value="07">07 - Julho</option>
+                          <option value="08">08 - Agosto</option>
+                          <option value="09">09 - Setembro</option>
+                          <option value="10">10 - Outubro</option>
+                          <option value="11">11 - Novembro</option>
+                          <option value="12">12 - Dezembro</option>
+                        </select>
+                        <ChevronDown className="absolute right-2.5 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
+                      </div>
+
+                      <div className="relative">
+                        <select
+                          id="ano-atividade"
+                          aria-label="Ano da Realização"
+                          value={anoAtividade}
+                          onChange={(e) => {
+                            setAnoAtividade(e.target.value)
+                            setDespachoGerado(null)
+                          }}
+                          className="h-10 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-7 text-sm shadow-2xs focus:border-[#1d4ed8] focus:outline-none focus:ring-1 focus:ring-[#1d4ed8]"
+                        >
+                          {['2024', '2025', '2026', '2027', '2028', '2029', '2030', '2031'].map(
+                            (ano) => (
+                              <option key={ano} value={ano}>
+                                {ano}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                        <ChevronDown className="absolute right-2.5 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
+                      </div>
                     </div>
+                    <span className="text-[11px] text-slate-500 block">
+                      Competência registrada: {mesAtividade}/{anoAtividade}
+                    </span>
                   </div>
 
                   <div className="space-y-1.5">

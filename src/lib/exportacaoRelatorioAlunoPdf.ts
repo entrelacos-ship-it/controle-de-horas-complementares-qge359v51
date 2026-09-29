@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { Aluno, Categoria, ConfiguracaoGlobal, Lancamento } from '@/types'
 import { calcularProgressoAluno } from '@/lib/calculoHoras'
-import { formatarDataBr } from '@/lib/formatadorDespacho'
+import { formatarMesAno } from '@/lib/formatadorDespacho'
 
 export interface GerarRelatorioAlunoPdfOpcoes {
   aluno: Aluno
@@ -512,7 +512,7 @@ export function gerarRelatorioAlunoPdf(params: GerarRelatorioAlunoPdfOpcoes): {
             'Atividade Complementar'
 
           return [
-            formatarDataBr(l.data_lancamento),
+            formatarMesAno(l.data_lancamento),
             l.semestre_letivo_atividade || '—',
             catNome,
             horasTexto,
@@ -527,7 +527,7 @@ export function gerarRelatorioAlunoPdf(params: GerarRelatorioAlunoPdfOpcoes): {
     margin: { left: margemEsq, right: margemDir },
     head: [
       [
-        'Data',
+        'Mês/Ano',
         'Semestre',
         'Categoria Homologada',
         'Horas Aceitas',
@@ -553,7 +553,7 @@ export function gerarRelatorioAlunoPdf(params: GerarRelatorioAlunoPdfOpcoes): {
       lineWidth: 0.5,
     },
     columnStyles: {
-      0: { cellWidth: 55, halign: 'center' }, // Data
+      0: { cellWidth: 55, halign: 'center' }, // Mês/Ano
       1: { cellWidth: 50, halign: 'center' }, // Semestre
       2: { cellWidth: 'auto', fontStyle: 'bold' }, // Categoria
       3: { cellWidth: 65, halign: 'center', fontStyle: 'bold' }, // Horas

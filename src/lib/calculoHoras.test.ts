@@ -5,7 +5,7 @@ import {
   validarMultiplosLancamentos,
   calcularProgressoAluno,
 } from './calculoHoras'
-import { gerarTextoDespacho } from './formatadorDespacho'
+import { gerarTextoDespacho, formatarMesAno } from './formatadorDespacho'
 import { executarTestesImportacao } from './importacaoPlanilha.test'
 import { executarTestesAuth } from './authValidations.test'
 import { executarTestesLocalStorageBackup } from './localStorageBackup.test'
@@ -597,6 +597,26 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
   resultados.push(
     'CT-MULTI-06: Despacho oficial multi-categoria consolida aberturas, saldos, numeral 0 e aviso de teto.',
   )
+
+  // =========================================================================
+  // TESTE DE FORMATAÇÃO DE DATA (APENAS MÊS E ANO MM/YYYY)
+  // =========================================================================
+  const mesAno1 = formatarMesAno('2025-03-15')
+  const mesAno2 = formatarMesAno('2026-10-04T03:06:28.000Z')
+  const mesAno3 = formatarMesAno('15/05/2024')
+  const mesAno4 = formatarMesAno('08/2026')
+
+  if (
+    mesAno1 !== '03/2025' ||
+    mesAno2 !== '10/2026' ||
+    mesAno3 !== '05/2024' ||
+    mesAno4 !== '08/2026'
+  ) {
+    throw new Error(
+      `CT-DATA-MES-ANO falhou: Formatação esperada MM/YYYY não bateu: ${mesAno1}, ${mesAno2}, ${mesAno3}, ${mesAno4}`,
+    )
+  }
+  resultados.push('CT-DATA-MES-ANO: Formatação padronizada para MM/YYYY em todo o sistema passou.')
 
   return { todosPassaram: true, resultados }
 }

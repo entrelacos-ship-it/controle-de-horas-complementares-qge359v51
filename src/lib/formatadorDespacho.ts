@@ -16,6 +16,50 @@ export function formatarDataBr(dataStr?: string | Date): string {
   return d.toLocaleDateString('pt-BR')
 }
 
+/**
+ * Formata data no padrão oficial MM/YYYY (apenas Mês e Ano, sem dia)
+ * Aceita strings ISO (2025-03-15, 2025-03), Date ou formatos BR
+ */
+export function formatarMesAno(dataStr?: string | Date | null): string {
+  if (!dataStr) {
+    const agora = new Date()
+    const mes = String(agora.getMonth() + 1).padStart(2, '0')
+    return `${mes}/${agora.getFullYear()}`
+  }
+
+  if (typeof dataStr === 'string') {
+    const str = dataStr.trim()
+    // Caso já venha no formato MM/YYYY
+    if (/^\d{2}\/\d{4}$/.test(str)) {
+      return str
+    }
+    // Caso venha YYYY-MM ou YYYY-MM-DD
+    const isoMatch = str.match(/^(\d{4})[-/](\d{1,2})/)
+    if (isoMatch) {
+      const ano = isoMatch[1]
+      const mes = isoMatch[2].padStart(2, '0')
+      return `${mes}/${ano}`
+    }
+    // Caso venha DD/MM/YYYY
+    const brMatch = str.match(/^\d{1,2}\/(\d{1,2})\/(\d{4})$/)
+    if (brMatch) {
+      const mes = brMatch[1].padStart(2, '0')
+      const ano = brMatch[2]
+      return `${mes}/${ano}`
+    }
+  }
+
+  const d = typeof dataStr === 'string' ? new Date(dataStr) : dataStr
+  if (!d || isNaN(d.getTime())) {
+    const agora = new Date()
+    const mes = String(agora.getMonth() + 1).padStart(2, '0')
+    return `${mes}/${agora.getFullYear()}`
+  }
+
+  const mes = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${mes}/${d.getUTCFullYear()}`
+}
+
 export interface ItemDespachoCategoria {
   categoria: Categoria
   horas: number

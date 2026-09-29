@@ -5,6 +5,7 @@ import { listarCategorias, criarCategoria, atualizarCategoria } from '@/services
 import { listarTodosLancamentos, criarLancamento } from '@/services/lancamentos'
 import { getConfiguracaoGlobal, salvarConfiguracaoGlobal } from '@/services/configuracao'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal } from '@/types'
+import { formatarMesAno } from '@/lib/formatadorDespacho'
 import {
   processarPlanilhaExcel,
   gerarPlanilhaModelo,
@@ -1694,8 +1695,10 @@ export default function Importacao() {
                                                       </Badge>
                                                     </div>
                                                     <div className="text-[11px] text-slate-500">
-                                                      {linha.observacao} · Data:{' '}
-                                                      {linha.dataLancamento}
+                                                      {linha.observacao} · Competência:{' '}
+                                                      <span className="font-mono font-medium text-slate-700">
+                                                        {formatarMesAno(linha.dataLancamento)}
+                                                      </span>
                                                     </div>
                                                   </div>
 
@@ -2004,8 +2007,8 @@ export default function Importacao() {
                                     </Badge>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {linha.dataLancamento}
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  {formatarMesAno(linha.dataLancamento)}
                                 </div>
                               </td>
 

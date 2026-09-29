@@ -8,7 +8,7 @@ import { listarCategorias } from '@/services/categorias'
 import { listarAlunos } from '@/services/alunos'
 import { listarTodosLancamentos, listarLancamentosRecentes } from '@/services/lancamentos'
 import { calcularHorasCategoria, isCategoriaBloqueada } from '@/lib/calculoHoras'
-import { formatarDataBr } from '@/lib/formatadorDespacho'
+import { formatarMesAno } from '@/lib/formatadorDespacho'
 import type { ConfiguracaoGlobal, Categoria, Aluno, Lancamento } from '@/types'
 import {
   Users,
@@ -371,8 +371,8 @@ export default function Index() {
                         </div>
 
                         <div className="text-right">
-                          <span className="text-xs text-slate-500 block">
-                            {formatarDataBr(l.data_lancamento)}
+                          <span className="text-xs text-slate-500 font-mono font-medium block">
+                            {formatarMesAno(l.data_lancamento)}
                           </span>
                           {aluno && (
                             <Link
