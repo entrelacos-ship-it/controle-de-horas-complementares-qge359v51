@@ -5,7 +5,12 @@ import {
   validarMultiplosLancamentos,
   calcularProgressoAluno,
 } from './calculoHoras'
-import { gerarTextoDespacho, formatarMesAno, calcularSemestreCurso } from './formatadorDespacho'
+import {
+  gerarTextoDespacho,
+  formatarMesAno,
+  calcularSemestreCurso,
+  derivarSemestreLetivo,
+} from './formatadorDespacho'
 import { executarTestesImportacao } from './importacaoPlanilha.test'
 import { executarTestesAuth } from './authValidations.test'
 import { executarTestesLocalStorageBackup } from './localStorageBackup.test'
@@ -730,6 +735,125 @@ export function executarTestesUnitarios(): { todosPassaram: boolean; resultados:
     )
   }
   resultados.push('CT-DATA-MES-ANO: Formatação padronizada para MM/YYYY em todo o sistema passou.')
+
+  // =========================================================================
+  // TESTES DE DERIVAÇÃO MÊS/ANO -> SEMESTRE LETIVO DA ATIVIDADE
+  // =========================================================================
+  // Janeiro a Junho -> .1
+  // Julho a Dezembro -> .2
+  if (
+    derivarSemestreLetivo('01', '2026') !== '2026.1' ||
+    derivarSemestreLetivo('06', '2026') !== '2026.1' ||
+    derivarSemestreLetivo('07', '2026') !== '2026.2' ||
+    derivarSemestreLetivo('12', '2026') !== '2026.2' ||
+    // Virada de ano
+    derivarSemestreLetivo(12, 2025) !== '2025.2' ||
+    derivarSemestreLetivo(1, 2026) !== '2026.1' ||
+    derivarSemestreLetivo('01/2027') !== '2027.1' ||
+    derivarSemestreLetivo('2026-03-15') !== '2026.1'
+  ) {
+    throw new Error('CT-DERIVAR-SEM-01 falhou: Regras de derivação mês->semestre incorretas.')
+  }
+  resultados.push(
+    'CT-DERIVAR-SEM-01: Derivação de mês/ano para semestre letivo (jan-jun .1, jul-dez .2, virada de ano) passou.',
+  )
+
+  // =========================================================================
+  // CASO DE REGRESSÃO: CLEUSA CARDOSO OLIVEIRA (Matrícula 3936)
+  // Entrada 2026.1, Atividade realizada em 03/2026 -> Semestre do Curso 1º
+  // Com o registro corrigido para 2026.1:
+  // - 1º semestre do curso: 3h apuradas, falta 17h (20 - 3)
+  // - 2º semestre do curso: falta 20h
+  // - Restante do curso: 197h (200 - 3)
+  // - Total geral: 3h
+  // =========================================================================
+  const mockAlunoCleusa: Aluno = {
+    id: 'bgrrmdcsdtj27fg',
+    matricula: '3936',
+    nome: 'CLEUSA CARDOSO OLIVEIRA',
+    turno: 'Noturno',
+    semestre_atual: 2,
+    periodo_entrada: '2026.1',
+    email: 'cleusa.cardoli@hotmail.com',
+  }
+
+  const semestreCleusaDerivado = derivarSemestreLetivo('03', '2026')
+  if (semestreCleusaDerivado !== '2026.1') {
+    throw new Error(
+      `CT-REGRESSAO-CLEUSA falhou: Março de 2026 derivou ${semestreCleusaDerivado}, esperado 2026.1`,
+    )
+  }
+
+  const semestreCursoCleusa = calcularSemestreCurso(
+    semestreCleusaDerivado,
+    mockAlunoCleusa.periodo_entrada,
+    mockAlunoCleusa.semestre_atual,
+  )
+  if (semestreCursoCleusa !== 1) {
+    throw new Error(
+      `CT-REGRESSAO-CLEUSA falhou: Atividade 2026.1 com entrada 2026.1 deve ser 1º semestre do curso, deu ${semestreCursoCleusa}º`,
+    )
+  }
+
+  const lancamentosCleusaCorrigido: Lancamento[] = [
+    {
+      id: 'f8bz6u8ls8cofgu',
+      aluno_id: mockAlunoCleusa.id,
+      categoria_id: '6ddz0gyt1hwv89c',
+      data_lancamento: '2026-03-01T00:00:00.000Z',
+      semestre_letivo_atividade: '2026.1',
+      horas_aceitas: 3,
+      comprovante_ok: true,
+      relatorio_ok: true,
+      created: '2026-10-14T15:39:48.740Z',
+      updated: '2026-10-17T13:45:06.953Z',
+    },
+  ]
+
+  const mockCatEventosLocais: Categoria = {
+    id: '6ddz0gyt1hwv89c',
+    nome: 'Eventos',
+    regra_horas_unitaria: '3h por evento',
+    teto_maximo_curso: 40,
+    ativo: true,
+  }
+
+  const despachoCleusa = gerarTextoDespacho({
+    aluno: mockAlunoCleusa,
+    semestreAtividade: '2026.1',
+    lancamentosDoAluno: lancamentosCleusaCorrigido,
+    categorias: [mockCatEventosLocais],
+    config: mockConfig,
+  })
+
+  // Validação estrita da apuração da Cleusa
+  if (!despachoCleusa.includes('Restante para integralizar o semestre (1º): 17 horas')) {
+    throw new Error(
+      `CT-REGRESSAO-CLEUSA falhou: 1º semestre deve faltar 17 horas (20 - 3). Despacho:\n${despachoCleusa}`,
+    )
+  }
+  if (!despachoCleusa.includes('Restante para integralizar o semestre (2º): 20 horas')) {
+    throw new Error(
+      `CT-REGRESSAO-CLEUSA falhou: 2º semestre deve faltar 20 horas. Despacho:\n${despachoCleusa}`,
+    )
+  }
+  if (!despachoCleusa.includes('Restante para integralizar o curso: 197 horas')) {
+    throw new Error(
+      `CT-REGRESSAO-CLEUSA falhou: Restante do curso deve ser 197 horas. Despacho:\n${despachoCleusa}`,
+    )
+  }
+  if (
+    !despachoCleusa.includes('Total geral de horas complementares até') ||
+    !despachoCleusa.includes('3 horas.')
+  ) {
+    throw new Error(
+      `CT-REGRESSAO-CLEUSA falhou: Total geral deve ser 3 horas. Despacho:\n${despachoCleusa}`,
+    )
+  }
+
+  resultados.push(
+    'CT-REGRESSAO-CLEUSA: Cenário Cleusa (entrada 2026.1, atividade 03/2026 -> 1º sem, falta 17h no 1º, 20h no 2º, 197h curso, total 3h) passou com sucesso.',
+  )
 
   return { todosPassaram: true, resultados }
 }

@@ -5,6 +5,48 @@ import { calcularHorasCategoria, isCategoriaBloqueada } from './calculoHoras'
  * Mapeia semestre letivo da atividade (ex: "2026.2" ou "2026-2") para o semestre ordinal do curso (1º a 10º)
  * com base no período de entrada do aluno (ex: "2025.1").
  */
+/**
+ * Deriva automaticamente o semestre letivo a partir do mês e ano da atividade.
+ * Meses janeiro a junho (1 a 6) -> ano + ".1"
+ * Meses julho a dezembro (7 a 12) -> ano + ".2"
+ * Aceita números ou strings ("03", "3", "2026"), além de strings completas ISO/BR.
+ */
+export function derivarSemestreLetivo(mesOuData: number | string, ano?: number | string): string {
+  // Se for passado apenas um argumento contendo data (ex: "2026-03-01" ou "03/2026")
+  if (ano === undefined) {
+    if (typeof mesOuData === 'string') {
+      const trimmed = mesOuData.trim()
+      // Formato MM/YYYY
+      const brMesAno = trimmed.match(/^(\d{1,2})\/(\d{4})$/)
+      if (brMesAno) {
+        const m = parseInt(brMesAno[1], 10)
+        const a = brMesAno[2]
+        return `${a}.${m >= 1 && m <= 6 ? 1 : 2}`
+      }
+      // Formato YYYY-MM ou YYYY-MM-DD
+      const isoMesAno = trimmed.match(/^(\d{4})[-/](\d{1,2})/)
+      if (isoMesAno) {
+        const a = isoMesAno[1]
+        const m = parseInt(isoMesAno[2], 10)
+        return `${a}.${m >= 1 && m <= 6 ? 1 : 2}`
+      }
+    }
+    const hoje = new Date()
+    const m = hoje.getMonth() + 1
+    const a = hoje.getFullYear()
+    return `${a}.${m >= 1 && m <= 6 ? 1 : 2}`
+  }
+
+  const mesNum = typeof mesOuData === 'number' ? mesOuData : parseInt(String(mesOuData), 10)
+  const anoStr = String(ano).trim()
+  const semestre = mesNum >= 1 && mesNum <= 6 ? 1 : 2
+  return `${anoStr}.${semestre}`
+}
+
+/**
+ * Mapeia semestre letivo da atividade (ex: "2026.2" ou "2026-2") para o semestre ordinal do curso (1º a 10º)
+ * com base no período de entrada do aluno (ex: "2025.1").
+ */
 export function calcularSemestreCurso(
   semestreAtividade: string,
   periodoEntrada?: string,

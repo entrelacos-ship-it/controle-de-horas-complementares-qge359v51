@@ -13,7 +13,7 @@ import {
   calcularProgressoAluno,
   type LinhaMultiplaCategoria,
 } from '@/lib/calculoHoras'
-import { gerarTextoDespacho } from '@/lib/formatadorDespacho'
+import { gerarTextoDespacho, derivarSemestreLetivo } from '@/lib/formatadorDespacho'
 import { gerarRelatorioAlunoPdf } from '@/lib/exportacaoRelatorioAlunoPdf'
 import type { Aluno, Categoria, Lancamento, ConfiguracaoGlobal, AlunoProgresso } from '@/types'
 import {
@@ -59,9 +59,6 @@ export default function LancamentoRapido() {
     if (appContext.categorias.length > 0) setCategorias(appContext.categorias)
     if (appContext.config) {
       setConfig(appContext.config)
-      if (appContext.config.semestre_letivo_atual) {
-        setSemestreAtividade(appContext.config.semestre_letivo_atual)
-      }
     }
     setLoadingInitial(appContext.loading)
   }, [appContext.alunos, appContext.categorias, appContext.config, appContext.loading])
@@ -86,7 +83,9 @@ export default function LancamentoRapido() {
   const dataAtividade = useMemo(() => {
     return `${anoAtividade}-${mesAtividade}-01`
   }, [anoAtividade, mesAtividade])
-  const [semestreAtividade, setSemestreAtividade] = useState('2026.2')
+  const semestreAtividade = useMemo(() => {
+    return derivarSemestreLetivo(mesAtividade, anoAtividade)
+  }, [mesAtividade, anoAtividade])
   const [categoriaId, setCategoriaId] = useState('')
   const [horasAceitas, setHorasAceitas] = useState<number | string>(10)
   const [isEstorno, setIsEstorno] = useState(false)
@@ -119,9 +118,6 @@ export default function LancamentoRapido() {
         setConfig(cfg)
         setAlunos(als)
         setCategorias(cats)
-        if (cfg?.semestre_letivo_atual) {
-          setSemestreAtividade(cfg.semestre_letivo_atual)
-        }
         // Seleciona automaticamente o primeiro aluno caso nenhum esteja selecionado
         if (als.length > 0 && !selectedAluno) {
           const primeiro = als[0]
@@ -383,17 +379,6 @@ export default function LancamentoRapido() {
       .filter((a) => a.nome.toLowerCase().includes(q) || a.matricula.toLowerCase().includes(q))
       .slice(0, 10)
   }, [alunos, searchQuery])
-
-  // Opções de semestres letivos para seleção
-  const semestresDisponiveis = [
-    '2024.1',
-    '2024.2',
-    '2025.1',
-    '2025.2',
-    '2026.1',
-    '2026.2',
-    '2027.1',
-  ]
 
   // Handlers
   const handleSelectAluno = (aluno: Aluno) => {
@@ -1091,32 +1076,20 @@ export default function LancamentoRapido() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="semestre-atividade"
-                      className="text-xs font-semibold text-slate-700"
-                    >
+                    <Label className="text-xs font-semibold text-slate-700">
                       Semestre Letivo da Atividade:
                     </Label>
-                    <div className="relative">
-                      <select
-                        id="semestre-atividade"
-                        required
-                        value={semestreAtividade}
-                        onChange={(e) => {
-                          setSemestreAtividade(e.target.value)
-                          setDespachoGerado(null)
-                        }}
-                        className="h-10 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-8 text-sm shadow-2xs focus:border-[#1d4ed8] focus:outline-none focus:ring-1 focus:ring-[#1d4ed8]"
-                      >
-                        {semestresDisponiveis.map((sem) => (
-                          <option key={sem} value={sem}>
-                            {sem}{' '}
-                            {sem === config?.semestre_letivo_atual ? '(Semestre Vigente)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
+                    <div className="flex h-10 w-full items-center justify-between rounded-md border border-blue-200 bg-blue-50/70 px-3 py-2 text-sm text-blue-900 shadow-2xs">
+                      <span className="font-semibold text-xs text-blue-800">
+                        Semestre letivo apurado:
+                      </span>
+                      <span className="font-bold text-sm text-[#0f2b48] bg-white px-2 py-0.5 rounded border border-blue-200 shadow-2xs">
+                        {semestreAtividade}
+                      </span>
                     </div>
+                    <span className="text-[11px] text-slate-500 block">
+                      Derivado automaticamente do mês/ano (jan–jun: .1 | jul–dez: .2)
+                    </span>
                   </div>
                 </div>
 
